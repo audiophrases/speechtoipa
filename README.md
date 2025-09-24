@@ -9,6 +9,61 @@
   - Providing confidence scoring and diagnostics for linguists or downstream systems.
 - **Primary users:** Linguists documenting languages, accessibility applications, speech researchers, and creative tools (e.g., voice acting or synthetic speech systems).
 
+## Quick Prototype: Faster-Whisper + IPA Conversion
+
+The repository now includes a small Python package that wires together
+[faster-whisper](https://github.com/guillaumekln/faster-whisper) for rapid speech
+recognition and [`phonemizer`](https://github.com/bootphon/phonemizer) with the
+`espeak-ng` backend for text-to-IPA conversion. It is intentionally lightweight
+so that we can iterate quickly before worrying about large-scale feedback or UI
+polish.
+
+### Installation
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# system dependencies (Ubuntu/Debian examples)
+sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+```
+
+- **FFmpeg** is required so faster-whisper can decode common audio formats.
+- **espeak-ng** powers the IPA conversion inside `phonemizer`. If you are on
+  macOS use `brew install ffmpeg espeak` instead.
+
+### Usage
+
+```bash
+python -m speechtoipa.cli path/to/audio.wav --model small --segments
+```
+
+The command prints the transcript, IPA rendering, and (optionally) each segment
+with timestamps. Use `--output result.json` to capture structured output.
+
+Key options:
+
+| Flag | Purpose |
+| ---- | ------- |
+| `--model` | Pick any faster-whisper checkpoint (`tiny`, `base`, `small`, etc.). |
+| `--language` | Hint Whisper if you already know the language. |
+| `--ipa-language` | Force a specific espeak-ng code (defaults to detected language). |
+| `--device` / `--compute-type` | Switch to GPU or float precision manually. |
+| `--disable-vad` | Skip the built-in voice-activity detector. |
+| `--segments` | Print per-segment IPA output for review. |
+
+The JSON payload written with `--output` includes per-segment timings, IPA, and
+model metadata so downstream tooling can consume it easily.
+
+### What’s next?
+
+- Swap in distilled checkpoints or quantised CTranslate2 models for embedded
+  devices.
+- Support streaming input and diarisation once we graduate from this CLI.
+- Layer in richer post-processing (tone marks, articulatory features) once we
+  have feedback on the IPA accuracy across multiple languages.
+
 ## End-to-End Processing Pipeline
 1. **Ingestion & Normalization**
    - Accept streaming (WebRTC/microphone) and batch (upload) audio.

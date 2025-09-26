@@ -56,6 +56,13 @@ Key options:
 The JSON payload written with `--output` includes per-segment timings, IPA, and
 model metadata so downstream tooling can consume it easily.
 
+### Troubleshooting
+
+- **Mobile browser cache (Opera):** If the web demo fails to load in Opera for
+  Android/iOS even though other browsers work, clear the browser cache and
+  reload. Opera has been observed to hold on to stale service worker assets,
+  preventing the engine from initialising until the cache is reset.
+
 ### What’s next?
 
 - Swap in distilled checkpoints or quantised CTranslate2 models for embedded

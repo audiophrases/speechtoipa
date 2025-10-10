@@ -1,4 +1,4 @@
-# Reading Pronunciation Practice
+# Pronunciation Practice
 
 An interactive web exercise that helps students practise reading aloud. Pick a
 paragraph, listen to the model reader, then record yourself. A bundled local

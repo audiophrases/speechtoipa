@@ -961,6 +961,7 @@
           targetTokens,
           lockedAnalysis: targetTokens.map(() => null),
           confirmedMeta: [],
+          confirmedTokens: [],
         };
         renderParagraph(paragraph.text);
         transcriptEl.textContent = showTranscript ? "…" : "—";
@@ -988,6 +989,35 @@
         });
       }
 
+      function determineTokensToAppend(existingTokens, newTokens) {
+        if (!newTokens.length) return [];
+
+        if (newTokens.length >= existingTokens.length) {
+          const prefixMatches = existingTokens.every(
+            (token, idx) => token === newTokens[idx]
+          );
+          if (prefixMatches) {
+            return newTokens.slice(existingTokens.length);
+          }
+        }
+
+        const maxOverlap = Math.min(existingTokens.length, newTokens.length);
+        for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+          const existingSuffix = existingTokens.slice(
+            existingTokens.length - overlap
+          );
+          const newPrefix = newTokens.slice(0, overlap);
+          const matches = existingSuffix.every(
+            (token, idx) => token === newPrefix[idx]
+          );
+          if (matches) {
+            return newTokens.slice(overlap);
+          }
+        }
+
+        return newTokens;
+      }
+
       function handleRecognitionResult(event) {
         if (!recognitionState) return;
         const { targetTokens, targetText } = recognitionState;
@@ -1006,42 +1036,51 @@
         const finalTokens = normaliseTranscript(finalTranscript);
         const interimTokens = normaliseTranscript(interimTranscript);
 
-        let confirmedMeta = recognitionState.confirmedMeta;
+        let confirmedTokens = recognitionState.confirmedTokens;
+        if (!Array.isArray(confirmedTokens)) {
+          confirmedTokens = [];
+          recognitionState.confirmedTokens = confirmedTokens;
+        }
 
-        if (confirmedMeta.length > finalTokens.length) {
-          confirmedMeta = confirmedMeta.slice(0, finalTokens.length);
+        let confirmedMeta = recognitionState.confirmedMeta;
+        if (!Array.isArray(confirmedMeta)) {
+          confirmedMeta = [];
           recognitionState.confirmedMeta = confirmedMeta;
         }
 
-        if (finalTokens.length > confirmedMeta.length) {
-          const now = typeof performance !== "undefined" && performance.now
-            ? performance.now()
-            : Date.now();
-          for (let i = confirmedMeta.length; i < finalTokens.length; i += 1) {
-            const word = finalTokens[i];
-            const previous = confirmedMeta[i - 1] || null;
+        const tokensToAppend = determineTokensToAppend(confirmedTokens, finalTokens);
+
+        if (tokensToAppend.length) {
+          const now =
+            typeof performance !== "undefined" && performance.now
+              ? performance.now()
+              : Date.now();
+          for (const token of tokensToAppend) {
+            const previous = confirmedMeta[confirmedMeta.length - 1] || null;
             const delta = previous ? Math.max(0, now - previous.timestamp) : 0;
             const entry = {
-              word,
+              word: token,
               timestamp: now,
               slow: previous ? delta > SLOW_WORD_THRESHOLD_MS : false,
-              repeated: previous ? previous.word === word : false,
+              repeated: previous ? previous.word === token : false,
             };
             confirmedMeta.push(entry);
+            confirmedTokens.push(token);
           }
           recognitionState.confirmedMeta = confirmedMeta;
+          recognitionState.confirmedTokens = confirmedTokens;
         }
 
-        const combinedTokens = finalTokens.concat(interimTokens);
+        const combinedTokens = confirmedTokens.concat(interimTokens);
         const analysis = evaluatePronunciation(targetTokens, combinedTokens, {
-          confirmedCount: finalTokens.length,
+          confirmedCount: confirmedTokens.length,
           metadata: confirmedMeta,
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
 
         if (
-          finalTokens.length >= targetTokens.length &&
+          confirmedTokens.length >= targetTokens.length &&
           recognition &&
           shouldRestartRecognition
         ) {
@@ -1056,7 +1095,8 @@
           }
         }
 
-        const displayTranscript = [finalTranscript, interimTranscript]
+        const confirmedTranscript = confirmedTokens.join(" ");
+        const displayTranscript = [confirmedTranscript, interimTranscript]
           .filter(Boolean)
           .join(" ")
           .trim();

@@ -192,13 +192,17 @@ def transcribe_audio_to_ipa(
         raise FileNotFoundError(f"Audio file not found: {resolved_audio_path}")
 
     model = _load_model(model_size, device, compute_type)
+    # Use the model defaults for decoding parameters such as ``beam_size`` and
+    # ``temperature``.  The previous hard-coded greedy configuration traded a
+    # little speed for a noticeable drop in recognition quality, especially for
+    # short phrases (e.g., "hello" -> "how long").  Relying on the tuned
+    # defaults restores beam search with automatic temperature fallback which
+    # produces far more faithful transcripts while keeping VAD filtering
+    # configurable.
     segments_iter, info = model.transcribe(
         str(resolved_audio_path),
         language=language,
-        beam_size=1,
-        best_of=1,
         vad_filter=vad_filter,
-        temperature=0.0,
     )
 
     recognised_language = language or info.language or ""

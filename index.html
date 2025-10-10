@@ -298,6 +298,55 @@
         color: var(--muted);
       }
 
+      .advanced-row {
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .advanced-row .helper-text {
+        margin: 0;
+        max-width: 420px;
+      }
+
+      .advanced-settings {
+        background: rgba(148, 163, 184, 0.12);
+        border-radius: 20px;
+        padding: 1.25rem;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .advanced-grid {
+        display: grid;
+        gap: 0.75rem 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .advanced-settings .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .advanced-settings .field label {
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .advanced-settings .toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+
+      .advanced-settings input[type="checkbox"] {
+        width: 1.1rem;
+        height: 1.1rem;
+        accent-color: var(--accent);
+      }
+
       .status strong {
         color: var(--accent);
       }
@@ -385,6 +434,87 @@
           <button id="start" type="button">🎤 Start practice</button>
           <button id="stop" type="button" disabled>⏹ Stop</button>
         </div>
+        <div class="control-row advanced-row">
+          <button
+            id="toggleAdvancedSettings"
+            type="button"
+            aria-expanded="false"
+            aria-controls="advancedSettingsPanel"
+          >
+            ⚙️ Show advanced settings
+          </button>
+          <p class="helper-text">
+            Adjust the recognition model, device, language, and filters. Your
+            choices are saved for next time.
+          </p>
+        </div>
+        <section
+          id="advancedSettingsPanel"
+          class="advanced-settings hidden"
+          aria-label="Advanced recognition settings"
+        >
+          <div class="advanced-grid">
+            <div class="field">
+              <label for="advancedModelSize">Model size</label>
+              <select id="advancedModelSize">
+                <option value="tiny">Tiny (fastest)</option>
+                <option value="base">Base</option>
+                <option value="small" selected>Small (default)</option>
+                <option value="medium">Medium</option>
+                <option value="large-v2">Large v2</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="advancedDevice">Device</label>
+              <select id="advancedDevice">
+                <option value="cpu">CPU</option>
+                <option value="cuda">CUDA (GPU)</option>
+                <option value="auto">Auto</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="advancedComputeType">Compute type</label>
+              <select id="advancedComputeType">
+                <option value="">Model default</option>
+                <option value="int8">int8 (CPU friendly)</option>
+                <option value="int8_float16">int8 float16</option>
+                <option value="int8_float32">int8 float32</option>
+                <option value="float16">float16</option>
+                <option value="float32">float32</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="recognitionLanguage">Recognition language</label>
+              <select id="recognitionLanguage">
+                <option value="en-US" data-transcribe="en">
+                  English (United States)
+                </option>
+                <option value="en-GB" data-transcribe="en">
+                  English (United Kingdom)
+                </option>
+                <option value="es-ES" data-transcribe="es">Spanish (Spain)</option>
+                <option value="fr-FR" data-transcribe="fr">French (France)</option>
+                <option value="de-DE" data-transcribe="de">German (Germany)</option>
+                <option value="ja-JP" data-transcribe="ja">Japanese</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="ipaLanguage">IPA language override</label>
+              <select id="ipaLanguage">
+                <option value="">Match recognition language</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="ja">Japanese</option>
+              </select>
+            </div>
+          </div>
+          <label class="toggle" for="vadFilterToggle">
+            <input type="checkbox" id="vadFilterToggle" />
+            <span>Apply voice activity detection (helps trim silence)</span>
+          </label>
+        </section>
       </div>
       <section id="status" class="status">
         <p id="supportMessage" class="hidden"></p>
@@ -406,6 +536,24 @@
       const playButton = document.getElementById("play");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
+      const advancedSettingsToggle = document.getElementById(
+        "toggleAdvancedSettings",
+      );
+      const advancedSettingsPanel = document.getElementById(
+        "advancedSettingsPanel",
+      );
+      const advancedModelSizeSelect = document.getElementById(
+        "advancedModelSize",
+      );
+      const advancedDeviceSelect = document.getElementById("advancedDevice");
+      const advancedComputeTypeSelect = document.getElementById(
+        "advancedComputeType",
+      );
+      const recognitionLanguageSelect = document.getElementById(
+        "recognitionLanguage",
+      );
+      const ipaLanguageSelect = document.getElementById("ipaLanguage");
+      const vadFilterToggle = document.getElementById("vadFilterToggle");
       const listeningLabel = document.getElementById("listening");
       const processingLabel = document.getElementById("processing");
       const resultContainer = document.getElementById("result");
@@ -418,6 +566,198 @@
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
       const SLOW_WORD_THRESHOLD_MS = 1500;
       const CUSTOM_OPTION_ID = "custom";
+      const ADVANCED_CONFIG_STORAGE_KEY = "speechtoipa:advanced-config";
+
+      const defaultRecognitionLocale =
+        navigator.language && typeof navigator.language === "string"
+          ? navigator.language
+          : "en-US";
+      const defaultTranscriptionLanguage =
+        defaultRecognitionLocale.split("-")[0] || "en";
+
+      const defaultAdvancedConfig = {
+        modelSize: "small",
+        device: "cpu",
+        computeType: "",
+        recognitionLocale: defaultRecognitionLocale,
+        language: defaultTranscriptionLanguage,
+        ipaLanguage: "",
+        vadFilter: true,
+      };
+
+      function loadAdvancedConfig() {
+        let storedConfig = null;
+        if (typeof localStorage !== "undefined") {
+          try {
+            const raw = localStorage.getItem(ADVANCED_CONFIG_STORAGE_KEY);
+            if (raw) {
+              storedConfig = JSON.parse(raw);
+            }
+          } catch (error) {
+            console.warn("Failed to read advanced settings", error);
+          }
+        }
+
+        const config = {
+          ...defaultAdvancedConfig,
+          ...(storedConfig && typeof storedConfig === "object" ? storedConfig : {}),
+        };
+
+        config.vadFilter = storedConfig?.vadFilter !== false;
+
+        if (!config.recognitionLocale) {
+          config.recognitionLocale = defaultAdvancedConfig.recognitionLocale;
+        }
+        if (!config.language) {
+          config.language = defaultAdvancedConfig.language;
+        }
+
+        return config;
+      }
+
+      function persistAdvancedConfig(config) {
+        if (typeof localStorage === "undefined") {
+          return;
+        }
+
+        try {
+          localStorage.setItem(
+            ADVANCED_CONFIG_STORAGE_KEY,
+            JSON.stringify(config),
+          );
+        } catch (error) {
+          console.warn("Failed to persist advanced settings", error);
+        }
+      }
+
+      let advancedConfig = loadAdvancedConfig();
+
+      function updateRecognitionLanguageConfig() {
+        if (!recognitionLanguageSelect) {
+          return;
+        }
+
+        const selectedOption = recognitionLanguageSelect.selectedOptions[0];
+        const selectedLocale = recognitionLanguageSelect.value;
+        const optionLanguage =
+          selectedOption?.dataset?.transcribe || selectedLocale.split("-")[0];
+
+        advancedConfig.recognitionLocale = selectedLocale || defaultRecognitionLocale;
+        advancedConfig.language = optionLanguage || "";
+      }
+
+      function syncAdvancedInputsWithConfig() {
+        if (advancedModelSizeSelect) {
+          const options = Array.from(advancedModelSizeSelect.options);
+          if (!options.find((option) => option.value === advancedConfig.modelSize)) {
+            advancedConfig.modelSize = defaultAdvancedConfig.modelSize;
+          }
+          advancedModelSizeSelect.value = advancedConfig.modelSize;
+        }
+
+        if (advancedDeviceSelect) {
+          const options = Array.from(advancedDeviceSelect.options);
+          if (!options.find((option) => option.value === advancedConfig.device)) {
+            advancedConfig.device = defaultAdvancedConfig.device;
+          }
+          advancedDeviceSelect.value = advancedConfig.device;
+        }
+
+        if (advancedComputeTypeSelect) {
+          const options = Array.from(advancedComputeTypeSelect.options);
+          if (!options.find((option) => option.value === advancedConfig.computeType)) {
+            advancedConfig.computeType = defaultAdvancedConfig.computeType;
+          }
+          advancedComputeTypeSelect.value = advancedConfig.computeType;
+        }
+
+        if (recognitionLanguageSelect) {
+          const options = Array.from(recognitionLanguageSelect.options);
+          const matchingOption = options.find(
+            (option) => option.value === advancedConfig.recognitionLocale,
+          );
+
+          if (matchingOption) {
+            recognitionLanguageSelect.value = advancedConfig.recognitionLocale;
+          } else if (options.length > 0) {
+            recognitionLanguageSelect.value = options[0].value;
+            updateRecognitionLanguageConfig();
+          }
+        }
+
+        if (ipaLanguageSelect) {
+          const options = Array.from(ipaLanguageSelect.options);
+          if (!options.find((option) => option.value === advancedConfig.ipaLanguage)) {
+            advancedConfig.ipaLanguage = defaultAdvancedConfig.ipaLanguage;
+          }
+          ipaLanguageSelect.value = advancedConfig.ipaLanguage;
+        }
+
+        if (vadFilterToggle) {
+          vadFilterToggle.checked = Boolean(advancedConfig.vadFilter);
+        }
+      }
+
+      syncAdvancedInputsWithConfig();
+      updateRecognitionLanguageConfig();
+      persistAdvancedConfig(advancedConfig);
+
+      if (advancedSettingsToggle && advancedSettingsPanel) {
+        advancedSettingsToggle.textContent = "⚙️ Show advanced settings";
+        advancedSettingsToggle.addEventListener("click", () => {
+          const isHidden = advancedSettingsPanel.classList.contains("hidden");
+          advancedSettingsPanel.classList.toggle("hidden");
+          advancedSettingsToggle.setAttribute(
+            "aria-expanded",
+            isHidden ? "true" : "false",
+          );
+          advancedSettingsToggle.textContent = isHidden
+            ? "⚙️ Hide advanced settings"
+            : "⚙️ Show advanced settings";
+        });
+      }
+
+      if (advancedModelSizeSelect) {
+        advancedModelSizeSelect.addEventListener("change", (event) => {
+          advancedConfig.modelSize = event.target.value || defaultAdvancedConfig.modelSize;
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      if (advancedDeviceSelect) {
+        advancedDeviceSelect.addEventListener("change", (event) => {
+          advancedConfig.device = event.target.value || defaultAdvancedConfig.device;
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      if (advancedComputeTypeSelect) {
+        advancedComputeTypeSelect.addEventListener("change", (event) => {
+          advancedConfig.computeType = event.target.value || "";
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      if (recognitionLanguageSelect) {
+        recognitionLanguageSelect.addEventListener("change", () => {
+          updateRecognitionLanguageConfig();
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      if (ipaLanguageSelect) {
+        ipaLanguageSelect.addEventListener("change", (event) => {
+          advancedConfig.ipaLanguage = event.target.value || "";
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      if (vadFilterToggle) {
+        vadFilterToggle.addEventListener("change", (event) => {
+          advancedConfig.vadFilter = Boolean(event.target.checked);
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
       const CUSTOM_PLACEHOLDER_TEXT =
         "Type or paste your own practice text in the box above.";
       const CUSTOM_HELPER_TEXT =
@@ -1113,7 +1453,13 @@
           return false;
         }
 
-        recognition.lang = "en-US";
+        updateRecognitionLanguageConfig();
+
+        const recognitionLocale =
+          (advancedConfig && advancedConfig.recognitionLocale) ||
+          navigator.language ||
+          "en-US";
+        recognition.lang = recognitionLocale;
         recognition.interimResults = true;
         recognition.continuous = true;
         shouldRestartRecognition = true;
@@ -1374,9 +1720,30 @@
       }
 
       async function submitForTranscription(wavBlob) {
+        updateRecognitionLanguageConfig();
+
         const formData = new FormData();
         formData.append("audio", wavBlob, "practice.wav");
-        formData.append("language", "en");
+        const modelSize = advancedConfig?.modelSize || defaultAdvancedConfig.modelSize;
+        const device = advancedConfig?.device || defaultAdvancedConfig.device;
+        const computeType =
+          typeof advancedConfig?.computeType === "string"
+            ? advancedConfig.computeType
+            : "";
+        const transcriptionLanguage =
+          advancedConfig?.language || defaultAdvancedConfig.language;
+        const ipaLanguage =
+          typeof advancedConfig?.ipaLanguage === "string"
+            ? advancedConfig.ipaLanguage
+            : "";
+        const vadFilter = advancedConfig?.vadFilter !== false;
+
+        formData.append("model_size", modelSize);
+        formData.append("device", device);
+        formData.append("compute_type", computeType);
+        formData.append("language", transcriptionLanguage);
+        formData.append("ipa_language", ipaLanguage);
+        formData.append("vad_filter", vadFilter ? "true" : "false");
 
         const response = await fetch(API_ENDPOINT, {
           method: "POST",

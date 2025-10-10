@@ -15,6 +15,7 @@
         --muted: #94a3b8;
         --success: #22c55e;
         --error: #ef4444;
+        --close: #f97316;
       }
 
       * {
@@ -263,6 +264,11 @@
         color: var(--muted);
       }
 
+      .paragraph span.close {
+        background: rgba(249, 115, 22, 0.2);
+        color: var(--close);
+      }
+
       .paragraph span.provisional.correct,
       .paragraph span.provisional.incorrect {
         opacity: 0.7;
@@ -357,6 +363,7 @@
               <strong>Highlight guide</strong>
               <ul>
                 <li><span style="color: var(--success); font-weight: 600;">Green</span> words sounded correct.</li>
+                <li><span style="color: var(--close); font-weight: 600;">Orange</span> words were close but need a touch more clarity.</li>
                 <li><span style="color: var(--error); font-weight: 600;">Red</span> words need another pass.</li>
                 <li><span style="color: #f59e0b; font-weight: 600;">Orange underline</span> marks slower words.</li>
                 <li><span style="color: #c084fc; font-weight: 600;">Purple underline</span> shows repeated words.</li>
@@ -614,6 +621,7 @@
           provisional: true,
           slow: false,
           repeated: false,
+          similarity: 0,
         };
       }
 
@@ -657,8 +665,8 @@
         customTextInput.setAttribute("aria-readonly", "true");
         helperText.textContent = "Click a highlighted word to hear it pronounced again.";
         if (legendCard) {
-          legendCard.classList.add("active");
-          legendCard.setAttribute("aria-hidden", "false");
+          legendCard.classList.remove("active");
+          legendCard.setAttribute("aria-hidden", "true");
         }
 
         targetWords.forEach((word, idx) => {
@@ -667,13 +675,28 @@
           span.dataset.word = getPlaybackWord(word);
           span.tabIndex = 0;
           span.setAttribute("role", "button");
+
+          const status = hasAnalysis
+            ? analysis[idx] || createEmptyStatus()
+            : createEmptyStatus();
+
+          const wordLabel = span.dataset.word || word.original;
+          const feedback = getWordFeedback(status);
+          const actionLabel = allowWordPlayback
+            ? `Hear model pronunciation for “${wordLabel}”.`
+            : `Word “${wordLabel}”.`;
+
           span.setAttribute(
             "aria-label",
-            `Hear model pronunciation for “${span.dataset.word || word.original}”`
+            feedback ? `${actionLabel} ${feedback}` : actionLabel
           );
 
+          if (feedback) {
+            span.title = feedback;
+            span.dataset.feedback = feedback;
+          }
+
           if (hasAnalysis) {
-            const status = analysis[idx] || createEmptyStatus();
             span.classList.add(status.correctness);
             if (status.provisional) span.classList.add("provisional");
             if (status.slow) span.classList.add("slow");
@@ -777,6 +800,35 @@
           .filter(Boolean);
       }
 
+      function calculateSimilarity(a, b) {
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        const rows = a.length + 1;
+        const cols = b.length + 1;
+        const dp = Array.from({ length: rows }, (_, i) => {
+          const row = new Array(cols).fill(0);
+          row[0] = i;
+          return row;
+        });
+        for (let j = 0; j < cols; j += 1) {
+          dp[0][j] = j;
+        }
+        for (let i = 1; i < rows; i += 1) {
+          for (let j = 1; j < cols; j += 1) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+              dp[i - 1][j] + 1,
+              dp[i][j - 1] + 1,
+              dp[i - 1][j - 1] + cost
+            );
+          }
+        }
+        const distance = dp[rows - 1][cols - 1];
+        const maxLen = Math.max(a.length, b.length);
+        if (maxLen === 0) return 1;
+        return (maxLen - distance) / maxLen;
+      }
+
       function evaluatePronunciation(targetWords, spokenWords, options = {}) {
         const { confirmedCount = 0, metadata = [] } = options;
         const analysis = [];
@@ -792,9 +844,12 @@
 
           const isConfirmed = spokenIndex < confirmedCount;
           status.provisional = !isConfirmed;
+          status.similarity = calculateSimilarity(target, spoken);
 
           if (target === spoken) {
             status.correctness = "correct";
+          } else if (status.similarity >= 0.5) {
+            status.correctness = "close";
           } else if (spokenWords[spokenIndex + 1] === target) {
             status.correctness = "incorrect";
           } else {
@@ -811,6 +866,41 @@
           analysis.push(status);
         }
         return analysis;
+      }
+
+      function getWordFeedback(status) {
+        if (!status) return "";
+        const messages = [];
+
+        switch (status.correctness) {
+          case "correct":
+            messages.push("Pronounced correctly.");
+            break;
+          case "close":
+            messages.push("Close match—sounds similar but could be clearer.");
+            break;
+          case "incorrect":
+            messages.push("Did not match the expected pronunciation.");
+            break;
+          case "pending":
+          default:
+            messages.push("Awaiting pronunciation.");
+            break;
+        }
+
+        if (status.correctness !== "pending" && status.provisional) {
+          messages.push("Result is provisional.");
+        }
+
+        if (status.slow) {
+          messages.push("Spoken slowly.");
+        }
+
+        if (status.repeated) {
+          messages.push("Repeated word.");
+        }
+
+        return messages.join(" ");
       }
 
       function showSupportMessage(message) {

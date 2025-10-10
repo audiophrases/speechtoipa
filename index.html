@@ -88,6 +88,19 @@
         transition: background 120ms ease, border 120ms ease, transform 120ms ease;
       }
 
+      select {
+        min-width: 220px;
+        background-color: rgba(15, 23, 42, 0.88);
+        color: var(--text);
+        border-color: rgba(148, 163, 184, 0.45);
+        box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08);
+      }
+
+      select option {
+        background-color: #1e293b;
+        color: #f8fafc;
+      }
+
       select:focus,
       button:focus {
         outline: 2px solid var(--accent);
@@ -123,6 +136,67 @@
 
       .text-input-wrapper {
         position: relative;
+      }
+
+      .add-custom-button {
+        align-self: flex-start;
+        background: rgba(56, 189, 248, 0.15);
+        border-color: rgba(56, 189, 248, 0.35);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .add-custom-button:hover {
+        background: rgba(56, 189, 248, 0.25);
+        border-color: rgba(56, 189, 248, 0.55);
+      }
+
+      .legend-card {
+        position: absolute;
+        top: calc(100% + 0.75rem);
+        right: 0;
+        width: max(260px, 50%);
+        background: rgba(15, 23, 42, 0.92);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 16px;
+        padding: 1rem;
+        color: var(--text);
+        box-shadow: 0 18px 30px rgba(15, 23, 42, 0.55);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-6px);
+        transition: opacity 160ms ease, transform 160ms ease;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        z-index: 2;
+      }
+
+      .legend-card strong {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.95rem;
+        color: var(--accent);
+      }
+
+      .legend-card ul {
+        margin: 0;
+        padding-left: 1.1rem;
+      }
+
+      .legend-card li {
+        margin-bottom: 0.25rem;
+      }
+
+      .legend-card.active:hover,
+      .legend-card.active:focus {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .text-input-wrapper:hover .legend-card.active,
+      .text-input-wrapper:focus-within .legend-card.active {
+        opacity: 1;
+        transform: translateY(0);
       }
 
       .paragraph {
@@ -273,10 +347,29 @@
               aria-live="polite"
               aria-multiline="true"
             ></div>
+            <div
+              id="legendCard"
+              class="legend-card"
+              role="note"
+              aria-live="polite"
+              aria-hidden="true"
+            >
+              <strong>Highlight guide</strong>
+              <ul>
+                <li><span style="color: var(--success); font-weight: 600;">Green</span> words sounded correct.</li>
+                <li><span style="color: var(--error); font-weight: 600;">Red</span> words need another pass.</li>
+                <li><span style="color: #f59e0b; font-weight: 600;">Orange underline</span> marks slower words.</li>
+                <li><span style="color: #c084fc; font-weight: 600;">Purple underline</span> shows repeated words.</li>
+              </ul>
+            </div>
           </div>
           <p class="helper-text">
-            This text is used whenever the “Custom text” option is selected.
+            This text is used whenever the current custom option is selected.
+            Click “Add another custom text” to create more slots.
           </p>
+          <button id="addCustomText" type="button" class="add-custom-button">
+            ➕ Add another custom text
+          </button>
         </div>
         <div class="control-row">
           <button id="play" type="button" class="primary">
@@ -302,6 +395,7 @@
       const customTextRow = document.getElementById("customTextRow");
       const customTextInput = document.getElementById("customText");
       const helperText = customTextRow.querySelector(".helper-text");
+      const addCustomTextButton = document.getElementById("addCustomText");
       const playButton = document.getElementById("play");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
@@ -310,6 +404,7 @@
       const resultContainer = document.getElementById("result");
       const transcriptEl = document.getElementById("transcript");
       const supportMessage = document.getElementById("supportMessage");
+      const legendCard = document.getElementById("legendCard");
 
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -319,9 +414,22 @@
       const CUSTOM_PLACEHOLDER_TEXT =
         "Type or paste your own practice text in the box above.";
       const CUSTOM_HELPER_TEXT =
-        "This text is used whenever the “Custom text” option is selected.";
+        "This text is used whenever the current custom option is selected. Click “Add another custom text” to create more slots.";
       const PRESET_HELPER_TEXT =
         "This passage comes from the list above. Select “Custom text” to enter your own.";
+      const CUSTOM_SAVED_HELPER_TEXT =
+        "This saved text is editable below. Use the dropdown to switch between your custom passages.";
+
+      const customEntries = [
+        {
+          id: CUSTOM_OPTION_ID,
+          label: "Custom text (enter below)",
+          helperText: CUSTOM_HELPER_TEXT,
+          placeholder: CUSTOM_PLACEHOLDER_TEXT,
+        },
+      ];
+      const customTexts = new Map([[CUSTOM_OPTION_ID, ""]]);
+      let customEntryCount = 1;
 
       const TONGUE_TWISTERS = [
         {
@@ -387,6 +495,26 @@
           label: "Toy boat",
           text: "Toy boat, toy boat, toy boat, toy boat, toy boat.",
         },
+        {
+          id: "fuzzy-wuzzy",
+          label: "Fuzzy Wuzzy",
+          text: "Fuzzy Wuzzy was a bear; Fuzzy Wuzzy had no hair.",
+        },
+        {
+          id: "proper-copper",
+          label: "Proper copper coffee pot",
+          text: "A proper copper coffee pot.",
+        },
+        {
+          id: "woodchuck",
+          label: "Woodchuck",
+          text: "How much wood would a woodchuck chuck if a woodchuck could chuck wood?",
+        },
+        {
+          id: "thirty-three",
+          label: "Thirty-three thousand",
+          text: "Thirty-three thousand feathers on a thrush's throat.",
+        },
       ];
 
       const synth = window.speechSynthesis;
@@ -400,18 +528,18 @@
       let recognitionState = null;
       let shouldRestartRecognition = false;
       let activeParagraphId = null;
-      let storedCustomText = "";
       let allowWordPlayback = false;
 
       const API_ENDPOINT = "/api/transcribe";
 
-      function populateParagraphs() {
+      function rebuildParagraphOptions(selectedId = CUSTOM_OPTION_ID) {
         paragraphSelect.innerHTML = "";
-        const customOption = document.createElement("option");
-        customOption.value = CUSTOM_OPTION_ID;
-        customOption.textContent = "Custom text (enter below)";
-        customOption.selected = true;
-        paragraphSelect.append(customOption);
+        customEntries.forEach((entry) => {
+          const option = document.createElement("option");
+          option.value = entry.id;
+          option.textContent = entry.label;
+          paragraphSelect.append(option);
+        });
 
         TONGUE_TWISTERS.forEach((entry) => {
           const option = document.createElement("option");
@@ -420,19 +548,31 @@
           paragraphSelect.append(option);
         });
 
-        activeParagraphId = CUSTOM_OPTION_ID;
-        storedCustomText = "";
-        setCustomInputMode(true);
-        renderParagraph("");
-        resetResultDisplay();
+        const matchingOption = Array.from(paragraphSelect.options).find(
+          (option) => option.value === selectedId
+        );
+        if (matchingOption) {
+          matchingOption.selected = true;
+        } else if (paragraphSelect.options.length) {
+          paragraphSelect.options[0].selected = true;
+        }
       }
 
-      function setCustomInputMode(isCustom) {
-        if (isCustom) {
+      function populateParagraphs() {
+        rebuildParagraphOptions(CUSTOM_OPTION_ID);
+        activeParagraphId = CUSTOM_OPTION_ID;
+        renderParagraph("");
+        resetResultDisplay();
+        hideSupportMessage();
+      }
+
+      function setCustomInputMode(customEntry) {
+        if (customEntry) {
           customTextInput.setAttribute("contenteditable", "true");
           customTextInput.setAttribute("aria-readonly", "false");
-          customTextInput.dataset.placeholder = CUSTOM_PLACEHOLDER_TEXT;
-          helperText.textContent = CUSTOM_HELPER_TEXT;
+          customTextInput.dataset.placeholder =
+            customEntry.placeholder || CUSTOM_PLACEHOLDER_TEXT;
+          helperText.textContent = customEntry.helperText || CUSTOM_HELPER_TEXT;
         } else {
           customTextInput.setAttribute("contenteditable", "false");
           customTextInput.setAttribute("aria-readonly", "true");
@@ -441,8 +581,31 @@
         }
       }
 
-      function getCustomText() {
-        return storedCustomText.trim();
+      function getCustomTextRaw(id = CUSTOM_OPTION_ID) {
+        return customTexts.get(id) || "";
+      }
+
+      function setCustomText(id, value) {
+        customTexts.set(id, value || "");
+      }
+
+      function addAnotherCustomEntry() {
+        customEntryCount += 1;
+        const id = `${CUSTOM_OPTION_ID}-${customEntryCount}`;
+        const entry = {
+          id,
+          label: `Custom text ${customEntryCount}`,
+          helperText: CUSTOM_SAVED_HELPER_TEXT,
+          placeholder: CUSTOM_PLACEHOLDER_TEXT,
+        };
+        customEntries.push(entry);
+        setCustomText(id, "");
+        rebuildParagraphOptions(id);
+        activeParagraphId = id;
+        hideSupportMessage();
+        resetResultDisplay();
+        renderParagraph("");
+        customTextInput.focus();
       }
 
       function createEmptyStatus() {
@@ -461,18 +624,30 @@
         return word.original.trim();
       }
 
+      function getCustomEntryById(id) {
+        return customEntries.find((entry) => entry.id === id);
+      }
+
+      function isCustomParagraphId(id) {
+        return Boolean(getCustomEntryById(id));
+      }
+
       function renderParagraph(text, analysis = []) {
         const targetWords = tokenise(text);
         const hasAnalysis = Array.isArray(analysis) && analysis.length > 0;
         customTextInput.innerHTML = "";
+        const activeId = activeParagraphId || paragraphSelect.value;
+        const customEntry = getCustomEntryById(activeId);
 
         if (!hasAnalysis || targetWords.length === 0) {
           customTextInput.textContent = text;
           customTextInput.classList.remove("interactive");
           allowWordPlayback = false;
-          const isCustomActive =
-            (activeParagraphId || paragraphSelect.value) === CUSTOM_OPTION_ID;
-          setCustomInputMode(isCustomActive);
+          setCustomInputMode(customEntry);
+          if (legendCard) {
+            legendCard.classList.remove("active");
+            legendCard.setAttribute("aria-hidden", "true");
+          }
           return;
         }
 
@@ -481,6 +656,10 @@
         customTextInput.setAttribute("contenteditable", "false");
         customTextInput.setAttribute("aria-readonly", "true");
         helperText.textContent = "Click a highlighted word to hear it pronounced again.";
+        if (legendCard) {
+          legendCard.classList.add("active");
+          legendCard.setAttribute("aria-hidden", "false");
+        }
 
         targetWords.forEach((word, idx) => {
           const span = document.createElement("span");
@@ -532,21 +711,23 @@
       }
 
       function getSelectedParagraph() {
-        if (paragraphSelect.value === CUSTOM_OPTION_ID) {
+        const selectedId = paragraphSelect.value;
+        const customEntry = getCustomEntryById(selectedId);
+        if (customEntry) {
           return {
-            id: CUSTOM_OPTION_ID,
-            label: "Custom text",
-            text: getCustomText(),
+            id: customEntry.id,
+            label: customEntry.label,
+            text: getCustomTextRaw(customEntry.id),
           };
         }
 
-        const chosen = TONGUE_TWISTERS.find((p) => p.id === paragraphSelect.value);
+        const chosen = TONGUE_TWISTERS.find((p) => p.id === selectedId);
         if (chosen) return chosen;
 
         return {
           id: CUSTOM_OPTION_ID,
-          label: "Custom text",
-          text: getCustomText(),
+          label: customEntries[0]?.label || "Custom text",
+          text: getCustomTextRaw(CUSTOM_OPTION_ID),
         };
       }
 
@@ -554,7 +735,9 @@
         const selected = getSelectedParagraph();
         activeParagraphId = selected.id;
         const textToShow =
-          selected.id === CUSTOM_OPTION_ID ? storedCustomText : selected.text;
+          isCustomParagraphId(selected.id)
+            ? getCustomTextRaw(selected.id)
+            : selected.text;
         renderParagraph(textToShow || "");
       }
 
@@ -562,8 +745,8 @@
         const selectedParagraph = getSelectedParagraph();
         activeParagraphId = selectedParagraph.id;
         const { text } = selectedParagraph;
-        if (selectedParagraph.id === CUSTOM_OPTION_ID && !text) {
-          renderParagraph(storedCustomText || "");
+        if (isCustomParagraphId(selectedParagraph.id) && !text.trim()) {
+          renderParagraph(getCustomTextRaw(selectedParagraph.id) || "");
           showSupportMessage(
             "Enter or paste the text you want to practise before playing a model reading."
           );
@@ -678,8 +861,8 @@
 
       function prepareParagraphSession(paragraph, { showTranscript } = { showTranscript: false }) {
         activeParagraphId = paragraph.id;
-        if (paragraph.id === CUSTOM_OPTION_ID) {
-          storedCustomText = paragraph.text;
+        if (isCustomParagraphId(paragraph.id)) {
+          setCustomText(paragraph.id, paragraph.text);
         }
         const targetTokens = tokenise(paragraph.text);
         recognitionState = {
@@ -766,6 +949,22 @@
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
+
+        if (
+          finalTokens.length >= targetTokens.length &&
+          recognition &&
+          shouldRestartRecognition
+        ) {
+          shouldRestartRecognition = false;
+          isListening = false;
+          stopButton.disabled = true;
+          toggleListening(false);
+          try {
+            recognition.stop();
+          } catch (error) {
+            console.error(error);
+          }
+        }
 
         const displayTranscript = [finalTranscript, interimTranscript]
           .filter(Boolean)
@@ -901,8 +1100,11 @@
         const selectedParagraph = getSelectedParagraph();
         activeParagraphId = selectedParagraph.id;
 
-        if (selectedParagraph.id === CUSTOM_OPTION_ID && !selectedParagraph.text) {
-          renderParagraph(storedCustomText || "");
+        if (
+          isCustomParagraphId(selectedParagraph.id) &&
+          !selectedParagraph.text.trim()
+        ) {
+          renderParagraph(getCustomTextRaw(selectedParagraph.id) || "");
           showSupportMessage(
             "Enter or paste the text you want to practise before starting a recording."
           );
@@ -1073,8 +1275,9 @@
 
         if (!transcript) {
           showSupportMessage("No speech was recognised. Please try again.");
-          const displayText =
-            paragraph.id === CUSTOM_OPTION_ID ? storedCustomText : text;
+          const displayText = isCustomParagraphId(paragraph.id)
+            ? getCustomTextRaw(paragraph.id)
+            : text;
           renderParagraph(displayText || "");
           return;
         }
@@ -1099,8 +1302,9 @@
       });
 
       customTextInput.addEventListener("input", () => {
-        if (paragraphSelect.value !== CUSTOM_OPTION_ID) return;
-        storedCustomText = customTextInput.textContent;
+        const activeId = activeParagraphId || paragraphSelect.value;
+        if (!isCustomParagraphId(activeId)) return;
+        setCustomText(activeId, customTextInput.textContent);
         hideSupportMessage();
         resetResultDisplay();
       });
@@ -1126,6 +1330,10 @@
         event.preventDefault();
         playWord(word);
       });
+
+      if (addCustomTextButton) {
+        addCustomTextButton.addEventListener("click", addAnotherCustomEntry);
+      }
 
       playButton.addEventListener("click", speakParagraph);
       startButton.addEventListener("click", startListening);

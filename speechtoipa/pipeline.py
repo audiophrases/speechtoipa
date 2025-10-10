@@ -6,12 +6,15 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Optional
 
+from functools import lru_cache
+
 from faster_whisper import WhisperModel
 from phonemizer import phonemize
 
 __all__ = [
     "SegmentResult",
     "TranscriptionResult",
+    "load_model",
     "transcribe_audio_to_ipa",
 ]
 
@@ -150,6 +153,28 @@ def _phonemize_text(text: str, ipa_language: str) -> str:
         ) from exc
 
 
+@lru_cache(maxsize=8)
+def _load_model(model_size: str, device: str, compute_type: Optional[str]) -> WhisperModel:
+    """Load and cache ``WhisperModel`` instances for reuse."""
+
+    resolved_compute_type = compute_type
+    if resolved_compute_type is None:
+        resolved_compute_type = "int8" if device == "cpu" else "auto"
+
+    return WhisperModel(model_size, device=device, compute_type=resolved_compute_type)
+
+
+def load_model(
+    model_size: str = "small",
+    *,
+    device: str = "cpu",
+    compute_type: Optional[str] = None,
+) -> WhisperModel:
+    """Public helper to warm and retrieve cached Whisper models."""
+
+    return _load_model(model_size, device, compute_type)
+
+
 def transcribe_audio_to_ipa(
     audio_path: Path | str,
     *,
@@ -166,10 +191,7 @@ def transcribe_audio_to_ipa(
     if not resolved_audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {resolved_audio_path}")
 
-    if compute_type is None:
-        compute_type = "int8" if device == "cpu" else "auto"
-
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+    model = _load_model(model_size, device, compute_type)
     segments_iter, info = model.transcribe(
         str(resolved_audio_path),
         language=language,

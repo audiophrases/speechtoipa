@@ -88,26 +88,6 @@
         transition: background 120ms ease, border 120ms ease, transform 120ms ease;
       }
 
-      textarea {
-        width: 100%;
-        min-height: 120px;
-        padding: 0.85rem 1rem;
-        border-radius: 20px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: rgba(148, 163, 184, 0.12);
-        color: inherit;
-        font: inherit;
-        resize: vertical;
-        transition: border 120ms ease, background 120ms ease;
-      }
-
-      textarea:focus {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-        background: rgba(148, 163, 184, 0.18);
-        border-color: rgba(148, 163, 184, 0.45);
-      }
-
       select:focus,
       button:focus {
         outline: 2px solid var(--accent);
@@ -141,6 +121,10 @@
         cursor: not-allowed;
       }
 
+      .text-input-wrapper {
+        position: relative;
+      }
+
       .paragraph {
         font-size: clamp(1.1rem, 2.5vw, 1.3rem);
         line-height: 1.75;
@@ -150,12 +134,44 @@
         border: 1px solid rgba(148, 163, 184, 0.25);
         min-height: 140px;
         transition: border 200ms ease;
+        white-space: pre-wrap;
+        outline: none;
+        overflow-y: auto;
       }
 
       .paragraph span {
         padding: 0.15rem 0.1rem;
         border-radius: 6px;
         transition: background 200ms ease, color 200ms ease;
+      }
+
+      .paragraph[contenteditable="true"] {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+      }
+
+      .paragraph[contenteditable="true"]:focus {
+        background: rgba(148, 163, 184, 0.18);
+        border-color: rgba(148, 163, 184, 0.45);
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+      }
+
+      .paragraph[data-placeholder]:empty::before {
+        content: attr(data-placeholder);
+        color: var(--muted);
+      }
+
+      .paragraph.interactive span {
+        cursor: pointer;
+      }
+
+      .paragraph.interactive span:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .paragraph.interactive span:hover {
+        background: rgba(56, 189, 248, 0.15);
       }
 
       .paragraph span.correct {
@@ -253,11 +269,17 @@
         </div>
         <div class="control-row stack" id="customTextRow">
           <label for="customText">Your practice text</label>
-          <textarea
-            id="customText"
-            rows="4"
-            placeholder="Type or paste the text you want to practise."
-          ></textarea>
+          <div class="text-input-wrapper">
+            <div
+              id="customText"
+              class="paragraph"
+              contenteditable="true"
+              data-placeholder="Type or paste the text you want to practise."
+              role="textbox"
+              aria-live="polite"
+              aria-multiline="true"
+            ></div>
+          </div>
           <p class="helper-text">
             This text is used whenever the “Custom text” option is selected.
           </p>
@@ -270,7 +292,6 @@
           <button id="stop" type="button" disabled>⏹ Stop</button>
         </div>
       </div>
-      <article id="paragraphDisplay" class="paragraph" aria-live="polite"></article>
       <section id="status" class="status">
         <p id="supportMessage" class="hidden"></p>
         <p class="hidden" id="listening">Listening… speak clearly into your microphone.</p>
@@ -284,9 +305,9 @@
 
     <script>
       const paragraphSelect = document.getElementById("paragraph");
-      const paragraphDisplay = document.getElementById("paragraphDisplay");
       const customTextRow = document.getElementById("customTextRow");
       const customTextInput = document.getElementById("customText");
+      const helperText = customTextRow.querySelector(".helper-text");
       const playButton = document.getElementById("play");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
@@ -303,6 +324,10 @@
       const CUSTOM_OPTION_ID = "custom";
       const CUSTOM_PLACEHOLDER_TEXT =
         "Type or paste your own practice text in the box above.";
+      const CUSTOM_HELPER_TEXT =
+        "This text is used whenever the “Custom text” option is selected.";
+      const PRESET_HELPER_TEXT =
+        "This passage comes from the list above. Select “Custom text” to enter your own.";
 
       const TONGUE_TWISTERS = [
         {
@@ -381,6 +406,8 @@
       let recognitionState = null;
       let shouldRestartRecognition = false;
       let activeParagraphId = null;
+      let storedCustomText = "";
+      let allowWordPlayback = false;
 
       const API_ENDPOINT = "/api/transcribe";
 
@@ -400,21 +427,28 @@
         });
 
         activeParagraphId = CUSTOM_OPTION_ID;
-        toggleCustomInputVisibility(true);
-        renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+        storedCustomText = "";
+        setCustomInputMode(true);
+        renderParagraph("");
         resetResultDisplay();
       }
 
-      function toggleCustomInputVisibility(isVisible) {
-        if (isVisible) {
-          customTextRow.classList.remove("hidden");
+      function setCustomInputMode(isCustom) {
+        if (isCustom) {
+          customTextInput.setAttribute("contenteditable", "true");
+          customTextInput.setAttribute("aria-readonly", "false");
+          customTextInput.dataset.placeholder = CUSTOM_PLACEHOLDER_TEXT;
+          helperText.textContent = CUSTOM_HELPER_TEXT;
         } else {
-          customTextRow.classList.add("hidden");
+          customTextInput.setAttribute("contenteditable", "false");
+          customTextInput.setAttribute("aria-readonly", "true");
+          customTextInput.dataset.placeholder = "";
+          helperText.textContent = PRESET_HELPER_TEXT;
         }
       }
 
       function getCustomText() {
-        return customTextInput.value.trim();
+        return storedCustomText.trim();
       }
 
       function createEmptyStatus() {
@@ -426,13 +460,45 @@
         };
       }
 
+      function getPlaybackWord(word) {
+        const cleaned = word.original.replace(/[^\p{L}'-]+/gu, "");
+        if (cleaned) return cleaned;
+        if (word.cleaned) return word.cleaned;
+        return word.original.trim();
+      }
+
       function renderParagraph(text, analysis = []) {
-        paragraphDisplay.innerHTML = "";
         const targetWords = tokenise(text);
         const hasAnalysis = Array.isArray(analysis) && analysis.length > 0;
+        customTextInput.innerHTML = "";
+
+        if (!hasAnalysis || targetWords.length === 0) {
+          customTextInput.textContent = text;
+          customTextInput.classList.remove("interactive");
+          allowWordPlayback = false;
+          const isCustomActive =
+            (activeParagraphId || paragraphSelect.value) === CUSTOM_OPTION_ID;
+          setCustomInputMode(isCustomActive);
+          return;
+        }
+
+        allowWordPlayback = true;
+        customTextInput.classList.add("interactive");
+        customTextInput.setAttribute("contenteditable", "false");
+        customTextInput.setAttribute("aria-readonly", "true");
+        helperText.textContent = "Click a highlighted word to hear it pronounced again.";
+
         targetWords.forEach((word, idx) => {
           const span = document.createElement("span");
-          span.textContent = word.original + " ";
+          span.textContent = word.original;
+          span.dataset.word = getPlaybackWord(word);
+          span.tabIndex = 0;
+          span.setAttribute("role", "button");
+          span.setAttribute(
+            "aria-label",
+            `Hear model pronunciation for “${span.dataset.word || word.original}”`
+          );
+
           if (hasAnalysis) {
             const status = analysis[idx] || createEmptyStatus();
             span.classList.add(status.correctness);
@@ -440,8 +506,21 @@
             if (status.slow) span.classList.add("slow");
             if (status.repeated) span.classList.add("repeated");
           }
-          paragraphDisplay.append(span);
+
+          customTextInput.append(span);
+          customTextInput.append(document.createTextNode(" "));
         });
+      }
+
+      function playWord(word) {
+        if (!word || !allowWordPlayback) return;
+        if (!("speechSynthesis" in window)) return;
+        if (synth.speaking) synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(word);
+        utterance.rate = 0.95;
+        utterance.pitch = 1;
+        utterance.lang = "en-US";
+        synth.speak(utterance);
       }
 
       function tokenise(text) {
@@ -481,10 +560,8 @@
         const selected = getSelectedParagraph();
         activeParagraphId = selected.id;
         const textToShow =
-          selected.id === CUSTOM_OPTION_ID && !selected.text
-            ? CUSTOM_PLACEHOLDER_TEXT
-            : selected.text;
-        renderParagraph(textToShow);
+          selected.id === CUSTOM_OPTION_ID ? storedCustomText : selected.text;
+        renderParagraph(textToShow || "");
       }
 
       function speakParagraph() {
@@ -492,7 +569,7 @@
         activeParagraphId = selectedParagraph.id;
         const { text } = selectedParagraph;
         if (selectedParagraph.id === CUSTOM_OPTION_ID && !text) {
-          renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+          renderParagraph(storedCustomText || "");
           showSupportMessage(
             "Enter or paste the text you want to practise before playing a model reading."
           );
@@ -606,6 +683,10 @@
       }
 
       function prepareParagraphSession(paragraph, { showTranscript } = { showTranscript: false }) {
+        activeParagraphId = paragraph.id;
+        if (paragraph.id === CUSTOM_OPTION_ID) {
+          storedCustomText = paragraph.text;
+        }
         const targetTokens = tokenise(paragraph.text);
         recognitionState = {
           paragraphId: paragraph.id,
@@ -827,7 +908,7 @@
         activeParagraphId = selectedParagraph.id;
 
         if (selectedParagraph.id === CUSTOM_OPTION_ID && !selectedParagraph.text) {
-          renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+          renderParagraph(storedCustomText || "");
           showSupportMessage(
             "Enter or paste the text you want to practise before starting a recording."
           );
@@ -999,10 +1080,8 @@
         if (!transcript) {
           showSupportMessage("No speech was recognised. Please try again.");
           const displayText =
-            paragraph.id === CUSTOM_OPTION_ID && !text
-              ? CUSTOM_PLACEHOLDER_TEXT
-              : text;
-          renderParagraph(displayText);
+            paragraph.id === CUSTOM_OPTION_ID ? storedCustomText : text;
+          renderParagraph(displayText || "");
           return;
         }
 
@@ -1020,8 +1099,6 @@
       }
 
       paragraphSelect.addEventListener("change", () => {
-        const isCustom = paragraphSelect.value === CUSTOM_OPTION_ID;
-        toggleCustomInputVisibility(isCustom);
         displaySelectedParagraph();
         hideSupportMessage();
         resetResultDisplay();
@@ -1029,9 +1106,31 @@
 
       customTextInput.addEventListener("input", () => {
         if (paragraphSelect.value !== CUSTOM_OPTION_ID) return;
-        displaySelectedParagraph();
+        storedCustomText = customTextInput.textContent;
         hideSupportMessage();
         resetResultDisplay();
+      });
+
+      customTextInput.addEventListener("click", (event) => {
+        if (!allowWordPlayback) return;
+        const target =
+          event.target instanceof Element
+            ? event.target.closest("span[data-word]")
+            : null;
+        if (!target) return;
+        event.preventDefault();
+        playWord(target.dataset.word || target.textContent.trim());
+      });
+
+      customTextInput.addEventListener("keydown", (event) => {
+        if (!allowWordPlayback) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const word = target.dataset.word;
+        if (!word) return;
+        event.preventDefault();
+        playWord(word);
       });
 
       playButton.addEventListener("click", speakParagraph);

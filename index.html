@@ -2,82 +2,434 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Speech-to-IPA Prototype</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reading Pronunciation Practice</title>
     <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --surface: rgba(15, 23, 42, 0.88);
+        --accent: #38bdf8;
+        --accent-strong: #0ea5e9;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --success: #22c55e;
+        --error: #ef4444;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
-        padding: 3rem 1.5rem;
-        background: #0f172a;
-        color: #e2e8f0;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        min-height: 100vh;
+        padding: 3rem 1.5rem 4rem;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
       }
+
       main {
-        max-width: 720px;
-        margin: 0 auto;
-        background: rgba(15, 23, 42, 0.85);
-        padding: 2.5rem;
-        border-radius: 24px;
-        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.65);
+        width: min(880px, 100%);
+        background: var(--surface);
+        padding: clamp(2rem, 4vw, 3rem);
+        border-radius: 28px;
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.65);
       }
+
       h1 {
         margin-top: 0;
-        font-size: 2.75rem;
+        font-size: clamp(2.5rem, 5vw, 3.25rem);
         line-height: 1.1;
-        color: #38bdf8;
+        color: var(--accent);
       }
+
       p {
         line-height: 1.6;
+        margin: 0 0 1rem;
       }
-      code {
-        background: rgba(226, 232, 240, 0.08);
-        padding: 0.15rem 0.35rem;
+
+      label,
+      select,
+      button {
+        font-size: 1rem;
+      }
+
+      .controls {
+        display: grid;
+        gap: 1rem;
+        margin: 1.5rem 0 2rem;
+      }
+
+      .control-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      select,
+      button {
+        background: rgba(148, 163, 184, 0.12);
+        color: inherit;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 999px;
+        padding: 0.65rem 1.25rem;
+        transition: background 120ms ease, border 120ms ease, transform 120ms ease;
+      }
+
+      select:focus,
+      button:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      button:hover,
+      select:hover {
+        background: rgba(148, 163, 184, 0.2);
+        border-color: rgba(148, 163, 184, 0.45);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: #0f172a;
+        border: none;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      button.primary:hover {
+        background: var(--accent-strong);
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .paragraph {
+        font-size: clamp(1.1rem, 2.5vw, 1.3rem);
+        line-height: 1.75;
+        padding: 1.5rem;
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        min-height: 140px;
+        transition: border 200ms ease;
+      }
+
+      .paragraph span {
+        padding: 0.15rem 0.1rem;
         border-radius: 6px;
+        transition: background 200ms ease, color 200ms ease;
+      }
+
+      .paragraph span.correct {
+        background: rgba(34, 197, 94, 0.2);
+        color: var(--success);
+      }
+
+      .paragraph span.incorrect {
+        background: rgba(239, 68, 68, 0.18);
+        color: var(--error);
+      }
+
+      .status {
+        margin-top: 1.5rem;
+        display: grid;
+        gap: 0.5rem;
         font-size: 0.95rem;
+        color: var(--muted);
       }
-      pre {
-        background: rgba(226, 232, 240, 0.08);
+
+      .status strong {
+        color: var(--accent);
+      }
+
+      .status .transcript {
+        font-family: "Fira Code", "Source Code Pro", monospace;
+        white-space: pre-wrap;
+        background: rgba(148, 163, 184, 0.12);
+        border-radius: 16px;
         padding: 1rem;
-        border-radius: 12px;
-        overflow-x: auto;
+        color: var(--text);
       }
-      a {
-        color: #f472b6;
+
+      .hidden {
+        display: none !important;
       }
-      ul {
-        padding-left: 1.1rem;
+
+      @media (max-width: 600px) {
+        body {
+          padding: 2rem 1rem 3rem;
+        }
+
+        .control-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        select,
+        button {
+          width: 100%;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>Speech-to-IPA Prototype</h1>
+      <h1>Reading Pronunciation Practice</h1>
       <p>
-        This project is an experimental pipeline that stitches together
-        <a href="https://github.com/guillaumekln/faster-whisper">faster-whisper</a>
-        for multilingual transcription with the
-        <a href="https://github.com/bootphon/phonemizer">phonemizer</a>
-        toolkit (using <code>espeak-ng</code>) to emit IPA symbols. The current
-        focus is on iterating quickly, validating IPA quality, and preparing for
-        richer UI/feedback loops.
+        Choose a paragraph, listen to the model reader, then record yourself
+        reading aloud. The site compares the recognised transcript to the target
+        text and colours each word green or red to highlight potential
+        mispronunciations.
       </p>
-      <p>
-        Start by installing the Python dependencies and system packages, then run
-        the CLI against any FFmpeg-compatible audio file:
-      </p>
-      <pre><code>python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-sudo apt-get install ffmpeg espeak-ng
-python -m speechtoipa.cli example.wav --segments</code></pre>
-      <p>
-        The CLI outputs JSON (with <code>--output</code>) and human-readable
-        summaries so we can plug it into future web or research workflows.
-      </p>
-      <p>
-        Up next: streaming transcription, diarisation, richer suprasegmental
-        modelling, and feedback capture tooling.
-      </p>
+      <div class="controls">
+        <div class="control-row">
+          <label for="paragraph">Paragraph</label>
+          <select id="paragraph"></select>
+        </div>
+        <div class="control-row">
+          <button id="play" type="button" class="primary">
+            ▶️ Play model reading
+          </button>
+          <button id="start" type="button">🎤 Start practice</button>
+          <button id="stop" type="button" disabled>⏹ Stop</button>
+        </div>
+      </div>
+      <article id="paragraphDisplay" class="paragraph" aria-live="polite"></article>
+      <section id="status" class="status">
+        <p id="supportMessage" class="hidden"></p>
+        <p class="hidden" id="listening">Listening… speak clearly into your microphone.</p>
+        <div class="hidden" id="result">
+          <strong>Recognised transcript</strong>
+          <div class="transcript" id="transcript">—</div>
+        </div>
+      </section>
     </main>
+
+    <script>
+      const paragraphSelect = document.getElementById("paragraph");
+      const paragraphDisplay = document.getElementById("paragraphDisplay");
+      const playButton = document.getElementById("play");
+      const startButton = document.getElementById("start");
+      const stopButton = document.getElementById("stop");
+      const listeningLabel = document.getElementById("listening");
+      const resultContainer = document.getElementById("result");
+      const transcriptEl = document.getElementById("transcript");
+      const supportMessage = document.getElementById("supportMessage");
+
+      const PARAGRAPHS = [
+        {
+          id: "orchard",
+          label: "An afternoon in the orchard",
+          text:
+            "The old apple trees arched over the path, their branches heavy with fruit that glowed like lanterns in the late sunlight.",
+        },
+        {
+          id: "lighthouse",
+          label: "The lighthouse keeper",
+          text:
+            "Each dawn the lighthouse keeper brewed a pot of tea and watched the waves roll in like marching bands beneath the cliff.",
+        },
+        {
+          id: "astronaut",
+          label: "Message from the astronaut",
+          text:
+            "From orbit the astronaut whispered a greeting, describing continents as swirls of paint and storms as pale crowns of cloud.",
+        },
+      ];
+
+      const synth = window.speechSynthesis;
+      let recognition;
+      let isListening = false;
+
+      function populateParagraphs() {
+        PARAGRAPHS.forEach((p, index) => {
+          const option = document.createElement("option");
+          option.value = p.id;
+          option.textContent = p.label;
+          if (index === 0) option.selected = true;
+          paragraphSelect.append(option);
+        });
+        renderParagraph(PARAGRAPHS[0].text);
+      }
+
+      function renderParagraph(text, analysis = []) {
+        paragraphDisplay.innerHTML = "";
+        const targetWords = tokenise(text);
+        targetWords.forEach((word, idx) => {
+          const span = document.createElement("span");
+          span.textContent = word.original + " ";
+          const status = analysis[idx];
+          if (status === "correct") span.classList.add("correct");
+          if (status === "incorrect") span.classList.add("incorrect");
+          paragraphDisplay.append(span);
+        });
+      }
+
+      function tokenise(text) {
+        const words = text
+          .trim()
+          .split(/\s+/)
+          .map((raw) => {
+            const cleaned = raw
+              .toLowerCase()
+              .replace(/^[^a-zà-ÿ']+|[^a-zà-ÿ']+$/gi, "");
+            return { original: raw.replace(/\s+/g, " "), cleaned };
+          })
+          .filter((token) => token.cleaned.length);
+        return words;
+      }
+
+      function getSelectedParagraph() {
+        const chosen = PARAGRAPHS.find((p) => p.id === paragraphSelect.value);
+        return chosen ?? PARAGRAPHS[0];
+      }
+
+      function speakParagraph() {
+        const { text } = getSelectedParagraph();
+        if (!("speechSynthesis" in window)) {
+          supportMessage.textContent =
+            "Speech synthesis is not supported in this browser.";
+          supportMessage.classList.remove("hidden");
+          return;
+        }
+        if (synth.speaking) synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1;
+        utterance.lang = "en-US";
+        synth.speak(utterance);
+      }
+
+      function ensureRecognition() {
+        if (recognition) return recognition;
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          supportMessage.textContent =
+            "Speech recognition is unavailable. Try using Chrome on desktop.";
+          supportMessage.classList.remove("hidden");
+          startButton.disabled = true;
+          stopButton.disabled = true;
+          return null;
+        }
+        recognition = new SpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.continuous = false;
+        recognition.addEventListener("result", handleRecognitionResult);
+        recognition.addEventListener("error", handleRecognitionError);
+        recognition.addEventListener("end", () => {
+          isListening = false;
+          startButton.disabled = false;
+          stopButton.disabled = true;
+          listeningLabel.classList.add("hidden");
+        });
+        return recognition;
+      }
+
+      function startListening() {
+        const rec = ensureRecognition();
+        if (!rec || isListening) return;
+        const { text } = getSelectedParagraph();
+        renderParagraph(text);
+        resultContainer.classList.add("hidden");
+        transcriptEl.textContent = "—";
+        rec.start();
+        isListening = true;
+        listeningLabel.classList.remove("hidden");
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      }
+
+      function stopListening() {
+        if (!recognition || !isListening) return;
+        recognition.stop();
+      }
+
+      function normaliseTranscript(text) {
+        return text
+          .toLowerCase()
+          .replace(/[^a-zà-ÿ'\s]/gi, "")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+      }
+
+      function evaluatePronunciation(targetWords, spokenWords) {
+        const analysis = [];
+        let spokenIndex = 0;
+        for (let i = 0; i < targetWords.length; i += 1) {
+          const target = targetWords[i].cleaned;
+          const spoken = spokenWords[spokenIndex];
+          if (!spoken) {
+            analysis.push("incorrect");
+            continue;
+          }
+          if (target === spoken) {
+            analysis.push("correct");
+            spokenIndex += 1;
+          } else if (spokenWords[spokenIndex + 1] === target) {
+            analysis.push("incorrect");
+            spokenIndex += 1;
+          } else {
+            analysis.push("incorrect");
+            spokenIndex += 1;
+          }
+        }
+        return analysis;
+      }
+
+      function handleRecognitionResult(event) {
+        const { text } = getSelectedParagraph();
+        const transcript = Array.from(event.results)
+          .map((result) => result[0].transcript)
+          .join(" ")
+          .trim();
+
+        if (!transcript) return;
+
+        const targetTokens = tokenise(text);
+        const spokenTokens = normaliseTranscript(transcript);
+        const analysis = evaluatePronunciation(targetTokens, spokenTokens);
+        renderParagraph(text, analysis);
+        transcriptEl.textContent = transcript;
+        resultContainer.classList.remove("hidden");
+      }
+
+      function handleRecognitionError(event) {
+        supportMessage.textContent =
+          event.error === "not-allowed"
+            ? "Microphone permission was denied. Please allow access and try again."
+            : `Speech recognition error: ${event.error}`;
+        supportMessage.classList.remove("hidden");
+      }
+
+      paragraphSelect.addEventListener("change", () => {
+        const { text } = getSelectedParagraph();
+        renderParagraph(text);
+        resultContainer.classList.add("hidden");
+        transcriptEl.textContent = "—";
+      });
+
+      playButton.addEventListener("click", speakParagraph);
+      startButton.addEventListener("click", startListening);
+      stopButton.addEventListener("click", stopListening);
+
+      populateParagraphs();
+    </script>
   </body>
 </html>

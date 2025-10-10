@@ -211,6 +211,7 @@
       <section id="status" class="status">
         <p id="supportMessage" class="hidden"></p>
         <p class="hidden" id="listening">Listening… speak clearly into your microphone.</p>
+        <p class="hidden" id="processing">Processing recording…</p>
         <div class="hidden" id="result">
           <strong>Recognised transcript</strong>
           <div class="transcript" id="transcript">—</div>
@@ -225,6 +226,7 @@
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
       const listeningLabel = document.getElementById("listening");
+      const processingLabel = document.getElementById("processing");
       const resultContainer = document.getElementById("result");
       const transcriptEl = document.getElementById("transcript");
       const supportMessage = document.getElementById("supportMessage");
@@ -251,8 +253,15 @@
       ];
 
       const synth = window.speechSynthesis;
-      let recognition;
       let isListening = false;
+      let isProcessing = false;
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let activeStream = null;
+      let audioContext = null;
+      let activeParagraphId = null;
+
+      const API_ENDPOINT = "/api/transcribe";
 
       function populateParagraphs() {
         PARAGRAPHS.forEach((p, index) => {
@@ -262,6 +271,7 @@
           if (index === 0) option.selected = true;
           paragraphSelect.append(option);
         });
+        activeParagraphId = PARAGRAPHS[0].id;
         renderParagraph(PARAGRAPHS[0].text);
       }
 
@@ -298,7 +308,9 @@
       }
 
       function speakParagraph() {
-        const { text } = getSelectedParagraph();
+        const selectedParagraph = getSelectedParagraph();
+        activeParagraphId = selectedParagraph.id;
+        const { text } = selectedParagraph;
         if (!("speechSynthesis" in window)) {
           supportMessage.textContent =
             "Speech synthesis is not supported in this browser.";
@@ -311,53 +323,6 @@
         utterance.pitch = 1;
         utterance.lang = "en-US";
         synth.speak(utterance);
-      }
-
-      function ensureRecognition() {
-        if (recognition) return recognition;
-        const SpeechRecognition =
-          window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-          supportMessage.textContent =
-            "Speech recognition is unavailable. Try using Chrome on desktop.";
-          supportMessage.classList.remove("hidden");
-          startButton.disabled = true;
-          stopButton.disabled = true;
-          return null;
-        }
-        recognition = new SpeechRecognition();
-        recognition.lang = "en-US";
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-        recognition.continuous = false;
-        recognition.addEventListener("result", handleRecognitionResult);
-        recognition.addEventListener("error", handleRecognitionError);
-        recognition.addEventListener("end", () => {
-          isListening = false;
-          startButton.disabled = false;
-          stopButton.disabled = true;
-          listeningLabel.classList.add("hidden");
-        });
-        return recognition;
-      }
-
-      function startListening() {
-        const rec = ensureRecognition();
-        if (!rec || isListening) return;
-        const { text } = getSelectedParagraph();
-        renderParagraph(text);
-        resultContainer.classList.add("hidden");
-        transcriptEl.textContent = "—";
-        rec.start();
-        isListening = true;
-        listeningLabel.classList.remove("hidden");
-        startButton.disabled = true;
-        stopButton.disabled = false;
-      }
-
-      function stopListening() {
-        if (!recognition || !isListening) return;
-        recognition.stop();
       }
 
       function normaliseTranscript(text) {
@@ -393,14 +358,237 @@
         return analysis;
       }
 
-      function handleRecognitionResult(event) {
-        const { text } = getSelectedParagraph();
-        const transcript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join(" ")
-          .trim();
+      function showSupportMessage(message) {
+        supportMessage.textContent = message;
+        supportMessage.classList.remove("hidden");
+      }
 
-        if (!transcript) return;
+      function hideSupportMessage() {
+        supportMessage.classList.add("hidden");
+        supportMessage.textContent = "";
+      }
+
+      function toggleListening(isActive) {
+        if (isActive) {
+          listeningLabel.classList.remove("hidden");
+        } else {
+          listeningLabel.classList.add("hidden");
+        }
+      }
+
+      function toggleProcessing(isActive) {
+        if (isActive) {
+          processingLabel.classList.remove("hidden");
+        } else {
+          processingLabel.classList.add("hidden");
+        }
+      }
+
+      function getPreferredMimeType() {
+        const preferred = [
+          "audio/webm;codecs=opus",
+          "audio/ogg;codecs=opus",
+          "audio/webm",
+        ];
+        for (const type of preferred) {
+          if (type && MediaRecorder.isTypeSupported(type)) {
+            return type;
+          }
+        }
+        return "";
+      }
+
+      async function startListening() {
+        if (isListening || isProcessing) return;
+        hideSupportMessage();
+
+        if (typeof MediaRecorder === "undefined") {
+          showSupportMessage(
+            "MediaRecorder is not supported in this browser. Try a modern Chromium-based browser."
+          );
+          startButton.disabled = true;
+          stopButton.disabled = true;
+          return;
+        }
+
+        try {
+          activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+          showSupportMessage(
+            error.name === "NotAllowedError"
+              ? "Microphone permission was denied. Please allow access and try again."
+              : "Unable to access the microphone."
+          );
+          return;
+        }
+
+        recordedChunks = [];
+        const mimeType = getPreferredMimeType();
+        try {
+          mediaRecorder = new MediaRecorder(activeStream, mimeType ? { mimeType } : undefined);
+        } catch (error) {
+          showSupportMessage("Failed to start audio recorder.");
+          activeStream.getTracks().forEach((track) => track.stop());
+          activeStream = null;
+          return;
+        }
+
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        });
+
+        mediaRecorder.addEventListener("stop", handleRecordingStop);
+
+        const { text } = getSelectedParagraph();
+        renderParagraph(text);
+        resultContainer.classList.add("hidden");
+        transcriptEl.textContent = "—";
+
+        mediaRecorder.start(1000);
+        isListening = true;
+        toggleListening(true);
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      }
+
+      function stopListening() {
+        if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+        mediaRecorder.stop();
+        stopButton.disabled = true;
+        if (activeStream) {
+          activeStream.getTracks().forEach((track) => track.stop());
+          activeStream = null;
+        }
+      }
+
+      async function handleRecordingStop() {
+        isListening = false;
+        toggleListening(false);
+        stopButton.disabled = true;
+        startButton.disabled = true;
+
+        if (!recordedChunks.length) {
+          showSupportMessage("No audio was captured. Please try again.");
+          startButton.disabled = false;
+          return;
+        }
+
+        try {
+          isProcessing = true;
+          toggleProcessing(true);
+          const wavBlob = await convertChunksToWav(recordedChunks);
+          await submitForTranscription(wavBlob);
+        } catch (error) {
+          console.error(error);
+          showSupportMessage(
+            error?.message || "Something went wrong while processing the recording."
+          );
+        } finally {
+          isProcessing = false;
+          toggleProcessing(false);
+          startButton.disabled = false;
+          recordedChunks = [];
+          mediaRecorder = null;
+        }
+      }
+
+      async function convertChunksToWav(chunks) {
+        const blob = new Blob(chunks);
+        const arrayBuffer = await blob.arrayBuffer();
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        return audioBufferToWav(audioBuffer);
+      }
+
+      function audioBufferToWav(audioBuffer) {
+        const sampleRate = audioBuffer.sampleRate;
+        const channelData = [];
+        for (let i = 0; i < audioBuffer.numberOfChannels; i += 1) {
+          channelData.push(audioBuffer.getChannelData(i));
+        }
+
+        const length = audioBuffer.length;
+        const combined = new Float32Array(length);
+        if (channelData.length === 1) {
+          combined.set(channelData[0]);
+        } else {
+          for (let i = 0; i < length; i += 1) {
+            let total = 0;
+            for (let c = 0; c < channelData.length; c += 1) {
+              total += channelData[c][i];
+            }
+            combined[i] = total / channelData.length;
+          }
+        }
+
+        const buffer = new ArrayBuffer(44 + length * 2);
+        const view = new DataView(buffer);
+
+        function writeString(offset, string) {
+          for (let i = 0; i < string.length; i += 1) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+          }
+        }
+
+        writeString(0, "RIFF");
+        view.setUint32(4, 36 + length * 2, true);
+        writeString(8, "WAVE");
+        writeString(12, "fmt ");
+        view.setUint32(16, 16, true); // PCM chunk size
+        view.setUint16(20, 1, true); // format (PCM)
+        view.setUint16(22, 1, true); // mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true); // byte rate
+        view.setUint16(32, 2, true); // block align
+        view.setUint16(34, 16, true); // bits per sample
+        writeString(36, "data");
+        view.setUint32(40, length * 2, true);
+
+        let offset = 44;
+        for (let i = 0; i < length; i += 1) {
+          let sample = combined[i];
+          sample = Math.max(-1, Math.min(1, sample));
+          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+          offset += 2;
+        }
+
+        return new Blob([buffer], { type: "audio/wav" });
+      }
+
+      async function submitForTranscription(wavBlob) {
+        const formData = new FormData();
+        formData.append("audio", wavBlob, "practice.wav");
+        formData.append("language", "en");
+
+        const response = await fetch(API_ENDPOINT, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Transcription request failed");
+        }
+
+        const payload = await response.json();
+        handleTranscriptionResult(payload);
+      }
+
+      function handleTranscriptionResult(payload) {
+        const transcript = (payload?.text || "").trim();
+        const paragraph =
+          PARAGRAPHS.find((entry) => entry.id === activeParagraphId) || getSelectedParagraph();
+        const { text } = paragraph;
+
+        if (!transcript) {
+          showSupportMessage("No speech was recognised. Please try again.");
+          renderParagraph(text);
+          return;
+        }
 
         const targetTokens = tokenise(text);
         const spokenTokens = normaliseTranscript(transcript);
@@ -410,17 +598,10 @@
         resultContainer.classList.remove("hidden");
       }
 
-      function handleRecognitionError(event) {
-        supportMessage.textContent =
-          event.error === "not-allowed"
-            ? "Microphone permission was denied. Please allow access and try again."
-            : `Speech recognition error: ${event.error}`;
-        supportMessage.classList.remove("hidden");
-      }
-
       paragraphSelect.addEventListener("change", () => {
-        const { text } = getSelectedParagraph();
-        renderParagraph(text);
+        const selected = getSelectedParagraph();
+        activeParagraphId = selected.id;
+        renderParagraph(selected.text);
         resultContainer.classList.add("hidden");
         transcriptEl.textContent = "—";
       });

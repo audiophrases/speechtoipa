@@ -64,6 +64,7 @@ async def transcribe_endpoint(
     ipa_language: Optional[str] = Form(None),
     device: str = Form("cpu"),
     compute_type: Optional[str] = Form(None),
+    vad_filter: Optional[str] = Form("true"),
 ) -> dict:
     """Persist the uploaded audio temporarily and return the transcription result."""
 
@@ -81,15 +82,37 @@ async def transcribe_endpoint(
         tmp_path = Path(tmp_file.name)
         tmp_file.write(audio_bytes)
 
+    resolved_compute_type = compute_type or None
+    resolved_language = (language or "").strip() or None
+    if isinstance(resolved_language, str) and resolved_language.lower() == "auto":
+        resolved_language = None
+    resolved_ipa_language = (ipa_language or "").strip() or None
+    if (
+        isinstance(resolved_ipa_language, str)
+        and resolved_ipa_language.lower() == "auto"
+    ):
+        resolved_ipa_language = None
+
+    vad_filter_flag = True
+    if isinstance(vad_filter, str):
+        value = vad_filter.strip().lower()
+        if value in {"false", "0", "no", "off"}:
+            vad_filter_flag = False
+        elif value in {"true", "1", "yes", "on"}:
+            vad_filter_flag = True
+    elif isinstance(vad_filter, bool):
+        vad_filter_flag = vad_filter
+
     try:
-        load_model(model_size, device=device, compute_type=compute_type)
+        load_model(model_size, device=device, compute_type=resolved_compute_type)
         result = transcribe_audio_to_ipa(
             tmp_path,
             model_size=model_size,
-            language=language or None,
-            ipa_language=ipa_language or None,
+            language=resolved_language,
+            ipa_language=resolved_ipa_language,
             device=device,
-            compute_type=compute_type,
+            compute_type=resolved_compute_type,
+            vad_filter=vad_filter_flag,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

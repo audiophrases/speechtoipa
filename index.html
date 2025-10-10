@@ -73,6 +73,11 @@
         align-items: center;
       }
 
+      .control-row.stack {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
       select,
       button {
         background: rgba(148, 163, 184, 0.12);
@@ -81,6 +86,26 @@
         border-radius: 999px;
         padding: 0.65rem 1.25rem;
         transition: background 120ms ease, border 120ms ease, transform 120ms ease;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 0.85rem 1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(148, 163, 184, 0.12);
+        color: inherit;
+        font: inherit;
+        resize: vertical;
+        transition: border 120ms ease, background 120ms ease;
+      }
+
+      textarea:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        background: rgba(148, 163, 184, 0.18);
+        border-color: rgba(148, 163, 184, 0.45);
       }
 
       select:focus,
@@ -171,6 +196,12 @@
         color: var(--muted);
       }
 
+      .helper-text {
+        margin: 0.35rem 0 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
       .status strong {
         color: var(--accent);
       }
@@ -199,7 +230,8 @@
         }
 
         select,
-        button {
+        button,
+        textarea {
           width: 100%;
         }
       }
@@ -218,6 +250,17 @@
         <div class="control-row">
           <label for="paragraph">Paragraph</label>
           <select id="paragraph"></select>
+        </div>
+        <div class="control-row stack" id="customTextRow">
+          <label for="customText">Your practice text</label>
+          <textarea
+            id="customText"
+            rows="4"
+            placeholder="Type or paste the text you want to practise."
+          ></textarea>
+          <p class="helper-text">
+            This text is used whenever the “Custom text” option is selected.
+          </p>
         </div>
         <div class="control-row">
           <button id="play" type="button" class="primary">
@@ -242,6 +285,8 @@
     <script>
       const paragraphSelect = document.getElementById("paragraph");
       const paragraphDisplay = document.getElementById("paragraphDisplay");
+      const customTextRow = document.getElementById("customTextRow");
+      const customTextInput = document.getElementById("customText");
       const playButton = document.getElementById("play");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
@@ -255,25 +300,73 @@
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
       const SLOW_WORD_THRESHOLD_MS = 1500;
+      const CUSTOM_OPTION_ID = "custom";
+      const CUSTOM_PLACEHOLDER_TEXT =
+        "Type or paste your own practice text in the box above.";
 
-      const PARAGRAPHS = [
+      const TONGUE_TWISTERS = [
         {
-          id: "orchard",
-          label: "An afternoon in the orchard",
+          id: "seashells",
+          label: "She sells seashells",
           text:
-            "The old apple trees arched over the path, their branches heavy with fruit that glowed like lanterns in the late sunlight.",
+            "She sells seashells by the seashore; the shells she sells are surely seashells.",
         },
         {
-          id: "lighthouse",
-          label: "The lighthouse keeper",
+          id: "peter-piper",
+          label: "Peter Piper",
           text:
-            "Each dawn the lighthouse keeper brewed a pot of tea and watched the waves roll in like marching bands beneath the cliff.",
+            "Peter Piper picked a peck of pickled peppers; a peck of pickled peppers Peter Piper picked.",
         },
         {
-          id: "astronaut",
-          label: "Message from the astronaut",
+          id: "clam-can",
+          label: "Clean cream can",
+          text: "How can a clam cram in a clean cream can?",
+        },
+        {
+          id: "susie-shoeshine",
+          label: "Susie in a shoeshine shop",
+          text: "I saw Susie sitting in a shoeshine shop.",
+        },
+        {
+          id: "pad-kid",
+          label: "Pad kid poured",
+          text: "Pad kid poured curd pulled cod.",
+        },
+        {
+          id: "fred-ted",
+          label: "Fred fed Ted",
+          text: "Fred fed Ted bread and Ted fed Fred bread.",
+        },
+        {
+          id: "black-bug",
+          label: "Big black bug",
+          text: "A big black bug bit a big black bear.",
+        },
+        {
+          id: "unique-new-york",
+          label: "Unique New York",
           text:
-            "From orbit the astronaut whispered a greeting, describing continents as swirls of paint and storms as pale crowns of cloud.",
+            "Unique New York, unique New York, you know you need unique New York.",
+        },
+        {
+          id: "sleek-swans",
+          label: "Six sleek swans",
+          text: "Six sleek swans swam swiftly southwards.",
+        },
+        {
+          id: "irish-wristwatch",
+          label: "Irish wristwatch",
+          text: "Irish wristwatch, Swiss wristwatch.",
+        },
+        {
+          id: "lorry",
+          label: "Red lorry, yellow lorry",
+          text: "Red lorry, yellow lorry, red lorry, yellow lorry.",
+        },
+        {
+          id: "toy-boat",
+          label: "Toy boat",
+          text: "Toy boat, toy boat, toy boat, toy boat, toy boat.",
         },
       ];
 
@@ -292,15 +385,36 @@
       const API_ENDPOINT = "/api/transcribe";
 
       function populateParagraphs() {
-        PARAGRAPHS.forEach((p, index) => {
+        paragraphSelect.innerHTML = "";
+        const customOption = document.createElement("option");
+        customOption.value = CUSTOM_OPTION_ID;
+        customOption.textContent = "Custom text (enter below)";
+        customOption.selected = true;
+        paragraphSelect.append(customOption);
+
+        TONGUE_TWISTERS.forEach((entry) => {
           const option = document.createElement("option");
-          option.value = p.id;
-          option.textContent = p.label;
-          if (index === 0) option.selected = true;
+          option.value = entry.id;
+          option.textContent = entry.label;
           paragraphSelect.append(option);
         });
-        activeParagraphId = PARAGRAPHS[0].id;
-        renderParagraph(PARAGRAPHS[0].text);
+
+        activeParagraphId = CUSTOM_OPTION_ID;
+        toggleCustomInputVisibility(true);
+        renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+        resetResultDisplay();
+      }
+
+      function toggleCustomInputVisibility(isVisible) {
+        if (isVisible) {
+          customTextRow.classList.remove("hidden");
+        } else {
+          customTextRow.classList.add("hidden");
+        }
+      }
+
+      function getCustomText() {
+        return customTextInput.value.trim();
       }
 
       function createEmptyStatus() {
@@ -345,20 +459,53 @@
       }
 
       function getSelectedParagraph() {
-        const chosen = PARAGRAPHS.find((p) => p.id === paragraphSelect.value);
-        return chosen ?? PARAGRAPHS[0];
+        if (paragraphSelect.value === CUSTOM_OPTION_ID) {
+          return {
+            id: CUSTOM_OPTION_ID,
+            label: "Custom text",
+            text: getCustomText(),
+          };
+        }
+
+        const chosen = TONGUE_TWISTERS.find((p) => p.id === paragraphSelect.value);
+        if (chosen) return chosen;
+
+        return {
+          id: CUSTOM_OPTION_ID,
+          label: "Custom text",
+          text: getCustomText(),
+        };
+      }
+
+      function displaySelectedParagraph() {
+        const selected = getSelectedParagraph();
+        activeParagraphId = selected.id;
+        const textToShow =
+          selected.id === CUSTOM_OPTION_ID && !selected.text
+            ? CUSTOM_PLACEHOLDER_TEXT
+            : selected.text;
+        renderParagraph(textToShow);
       }
 
       function speakParagraph() {
         const selectedParagraph = getSelectedParagraph();
         activeParagraphId = selectedParagraph.id;
         const { text } = selectedParagraph;
+        if (selectedParagraph.id === CUSTOM_OPTION_ID && !text) {
+          renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+          showSupportMessage(
+            "Enter or paste the text you want to practise before playing a model reading."
+          );
+          customTextInput.focus();
+          return;
+        }
         if (!("speechSynthesis" in window)) {
           supportMessage.textContent =
             "Speech synthesis is not supported in this browser.";
           supportMessage.classList.remove("hidden");
           return;
         }
+        hideSupportMessage();
         if (synth.speaking) synth.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 0.95;
@@ -422,6 +569,12 @@
         supportMessage.textContent = "";
       }
 
+      function resetResultDisplay() {
+        resultContainer.classList.add("hidden");
+        transcriptEl.textContent = "—";
+        recognitionState = null;
+      }
+
       function toggleListening(isActive) {
         if (isActive) {
           listeningLabel.classList.remove("hidden");
@@ -455,6 +608,7 @@
       function prepareParagraphSession(paragraph, { showTranscript } = { showTranscript: false }) {
         const targetTokens = tokenise(paragraph.text);
         recognitionState = {
+          paragraphId: paragraph.id,
           targetText: paragraph.text,
           targetTokens,
           lockedAnalysis: targetTokens.map(() => null),
@@ -672,6 +826,15 @@
         const selectedParagraph = getSelectedParagraph();
         activeParagraphId = selectedParagraph.id;
 
+        if (selectedParagraph.id === CUSTOM_OPTION_ID && !selectedParagraph.text) {
+          renderParagraph(CUSTOM_PLACEHOLDER_TEXT);
+          showSupportMessage(
+            "Enter or paste the text you want to practise before starting a recording."
+          );
+          customTextInput.focus();
+          return;
+        }
+
         if (supportsSpeechRecognition) {
           prepareParagraphSession(selectedParagraph, { showTranscript: true });
           const started = startSpeechRecognition();
@@ -825,16 +988,26 @@
       function handleTranscriptionResult(payload) {
         const transcript = (payload?.text || "").trim();
         const paragraph =
-          PARAGRAPHS.find((entry) => entry.id === activeParagraphId) || getSelectedParagraph();
+          recognitionState && recognitionState.targetText
+            ? {
+                id: recognitionState.paragraphId || activeParagraphId || CUSTOM_OPTION_ID,
+                text: recognitionState.targetText,
+              }
+            : getSelectedParagraph();
         const { text } = paragraph;
 
         if (!transcript) {
           showSupportMessage("No speech was recognised. Please try again.");
-          renderParagraph(text);
+          const displayText =
+            paragraph.id === CUSTOM_OPTION_ID && !text
+              ? CUSTOM_PLACEHOLDER_TEXT
+              : text;
+          renderParagraph(displayText);
           return;
         }
 
         prepareParagraphSession(paragraph, { showTranscript: true });
+        hideSupportMessage();
         const targetTokens = recognitionState.targetTokens;
         const spokenTokens = normaliseTranscript(transcript);
         const analysis = evaluatePronunciation(targetTokens, spokenTokens, {
@@ -847,12 +1020,18 @@
       }
 
       paragraphSelect.addEventListener("change", () => {
-        const selected = getSelectedParagraph();
-        activeParagraphId = selected.id;
-        renderParagraph(selected.text);
-        resultContainer.classList.add("hidden");
-        transcriptEl.textContent = "—";
-        recognitionState = null;
+        const isCustom = paragraphSelect.value === CUSTOM_OPTION_ID;
+        toggleCustomInputVisibility(isCustom);
+        displaySelectedParagraph();
+        hideSupportMessage();
+        resetResultDisplay();
+      });
+
+      customTextInput.addEventListener("input", () => {
+        if (paragraphSelect.value !== CUSTOM_OPTION_ID) return;
+        displaySelectedParagraph();
+        hideSupportMessage();
+        resetResultDisplay();
       });
 
       playButton.addEventListener("click", speakParagraph);

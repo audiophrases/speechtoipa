@@ -571,6 +571,7 @@
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
+      const synth = window.speechSynthesis;
       const SLOW_WORD_THRESHOLD_MS = 1500;
       const CLOSE_SIMILARITY_THRESHOLD = 0.5;
       const MATCH_LOOKAHEAD_LIMIT = 6;
@@ -954,7 +955,6 @@
         },
       ];
 
-      const synth = window.speechSynthesis;
       let isListening = false;
       let isProcessing = false;
       let mediaRecorder = null;

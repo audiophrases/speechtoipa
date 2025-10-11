@@ -21,11 +21,11 @@ highlight potential pronunciation slips.
    pip install -r requirements.txt
    ```
    The first transcription will automatically download the requested
-   faster-whisper model (default: `small`) into your local cache. To control the
+   faster-whisper model (default: `large-v2`) into your local cache. To control the
    location, set `FWHISPER_ASSET_DIR` before running the server.
 2. Launch the offline inference endpoint:
    ```bash
-   python -m speechtoipa.local_server --host 127.0.0.1 --port 8000 --model-size small
+   python -m speechtoipa.local_server --host 127.0.0.1 --port 8000 --model-size large-v2
    ```
    Use `--device cuda` and an appropriate `--compute-type` if you have a GPU.
    The server also serves `index.html`, so you can point your browser straight

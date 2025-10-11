@@ -166,7 +166,7 @@ def _load_model(model_size: str, device: str, compute_type: Optional[str]) -> Wh
 
 
 def load_model(
-    model_size: str = "small",
+    model_size: str = "large-v2",
     *,
     device: str = "cpu",
     compute_type: Optional[str] = None,
@@ -179,7 +179,7 @@ def load_model(
 def transcribe_audio_to_ipa(
     audio_path: Path | str,
     *,
-    model_size: str = "small",
+    model_size: str = "large-v2",
     language: Optional[str] = None,
     ipa_language: Optional[str] = None,
     device: str = "cpu",

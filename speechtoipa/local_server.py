@@ -59,7 +59,7 @@ if static_dir.exists():
 @app.post("/api/transcribe")
 async def transcribe_endpoint(
     audio: UploadFile = File(...),
-    model_size: str = Form("small"),
+    model_size: str = Form("large-v2"),
     language: Optional[str] = Form(None),
     ipa_language: Optional[str] = Form(None),
     device: str = Form("cpu"),
@@ -131,7 +131,7 @@ def run_server(
     *,
     host: str = "127.0.0.1",
     port: int = 8000,
-    model_size: str = "small",
+    model_size: str = "large-v2",
     device: str = "cpu",
     compute_type: Optional[str] = None,
 ) -> None:
@@ -161,7 +161,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000, help="Port to serve on (default: 8000)")
     parser.add_argument(
         "--model-size",
-        default="small",
+        default="large-v2",
         help="faster-whisper model size to load (e.g. tiny, base, small, medium)",
     )
     parser.add_argument(

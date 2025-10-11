@@ -455,13 +455,13 @@
         >
           <div class="advanced-grid">
             <div class="field">
-              <label for="advancedModelSize">Model size</label>
+              <label for="advancedModelSize">Model size (Large v2 default)</label>
               <select id="advancedModelSize">
                 <option value="tiny">Tiny (fastest)</option>
                 <option value="base">Base</option>
-                <option value="small" selected>Small (default)</option>
+                <option value="small">Small</option>
                 <option value="medium">Medium</option>
-                <option value="large-v2">Large v2</option>
+                <option value="large-v2" selected>Large v2 (default)</option>
               </select>
             </div>
             <div class="field">
@@ -592,7 +592,7 @@
         defaultRecognitionLocale.split("-")[0] || "en";
 
       const defaultAdvancedConfig = {
-        modelSize: "small",
+        modelSize: "large-v2",
         device: "cpu",
         computeType: "",
         recognitionLocale: defaultRecognitionLocale,

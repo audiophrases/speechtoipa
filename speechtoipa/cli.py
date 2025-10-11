@@ -17,7 +17,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("audio", type=Path, help="Path to the input audio file (any ffmpeg-compatible format).")
     parser.add_argument(
         "--model",
-        default="small",
+        default="large-v2",
         help="Whisper model size to download/use (tiny, base, small, medium, large-v2, etc.).",
     )
     parser.add_argument(

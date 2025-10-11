@@ -565,6 +565,8 @@
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
       const SLOW_WORD_THRESHOLD_MS = 1500;
+      const CLOSE_SIMILARITY_THRESHOLD = 0.5;
+      const MATCH_LOOKAHEAD_LIMIT = 6;
       const CUSTOM_OPTION_ID = "custom";
       const ADVANCED_CONFIG_STORAGE_KEY = "speechtoipa:advanced-config";
 
@@ -1169,40 +1171,92 @@
         return (maxLen - distance) / maxLen;
       }
 
+      function findBestMatchIndex(target, spokenWords, startIndex) {
+        let bestIndex = -1;
+        let bestSimilarity = 0;
+        for (let idx = startIndex; idx < spokenWords.length; idx += 1) {
+          const candidate = spokenWords[idx];
+          if (!candidate) continue;
+          if (candidate === target) {
+            return { index: idx, similarity: 1 };
+          }
+          const distanceFromStart = idx - startIndex;
+          const similarity = calculateSimilarity(target, candidate);
+          if (
+            similarity >= CLOSE_SIMILARITY_THRESHOLD &&
+            similarity > bestSimilarity &&
+            distanceFromStart <= MATCH_LOOKAHEAD_LIMIT
+          ) {
+            bestIndex = idx;
+            bestSimilarity = similarity;
+          }
+          if (distanceFromStart > MATCH_LOOKAHEAD_LIMIT && bestIndex !== -1) {
+            break;
+          }
+        }
+        if (bestIndex === -1) {
+          return { index: -1, similarity: 0 };
+        }
+        return { index: bestIndex, similarity: bestSimilarity };
+      }
+
       function evaluatePronunciation(targetWords, spokenWords, options = {}) {
-        const { confirmedCount = 0, metadata = [] } = options;
+        const {
+          confirmedCount = 0,
+          metadata = [],
+          awaitingMore = false,
+          isComplete = false,
+        } = options;
         const analysis = [];
         let spokenIndex = 0;
+        const noPendingTokens = !awaitingMore && confirmedCount === spokenWords.length;
         for (let i = 0; i < targetWords.length; i += 1) {
           const status = createEmptyStatus();
           const target = targetWords[i].cleaned;
-          const spoken = spokenWords[spokenIndex];
-          if (!spoken) {
+          if (spokenIndex >= spokenWords.length) {
+            if (noPendingTokens || isComplete) {
+              status.correctness = "incorrect";
+              status.provisional = false;
+            }
             analysis.push(status);
             continue;
           }
 
-          const isConfirmed = spokenIndex < confirmedCount;
-          status.provisional = !isConfirmed;
-          status.similarity = calculateSimilarity(target, spoken);
+          const { index: matchIndex, similarity } = findBestMatchIndex(
+            target,
+            spokenWords,
+            spokenIndex
+          );
 
-          if (target === spoken) {
+          if (matchIndex === -1) {
+            if (noPendingTokens || isComplete) {
+              status.correctness = "incorrect";
+              status.provisional = false;
+            }
+            analysis.push(status);
+            continue;
+          }
+
+          const isConfirmed = matchIndex < confirmedCount;
+          const holdOpen = awaitingMore && !isComplete;
+          status.provisional = holdOpen || !isConfirmed;
+          status.similarity = similarity;
+
+          if (similarity === 1) {
             status.correctness = "correct";
-          } else if (status.similarity >= 0.5) {
+          } else if (similarity >= CLOSE_SIMILARITY_THRESHOLD) {
             status.correctness = "close";
-          } else if (spokenWords[spokenIndex + 1] === target) {
-            status.correctness = "incorrect";
           } else {
             status.correctness = "incorrect";
           }
 
           if (isConfirmed) {
-            const meta = metadata[spokenIndex];
+            const meta = metadata[matchIndex];
             status.slow = Boolean(meta?.slow);
             status.repeated = Boolean(meta?.repeated);
           }
 
-          spokenIndex += 1;
+          spokenIndex = matchIndex + 1;
           analysis.push(status);
         }
         return analysis;
@@ -1415,6 +1469,7 @@
         const analysis = evaluatePronunciation(targetTokens, combinedTokens, {
           confirmedCount: confirmedTokens.length,
           metadata: confirmedMeta,
+          awaitingMore: isListening || interimTokens.length > 0,
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
@@ -1785,6 +1840,7 @@
         const spokenTokens = normaliseTranscript(transcript);
         const analysis = evaluatePronunciation(targetTokens, spokenTokens, {
           confirmedCount: spokenTokens.length,
+          isComplete: true,
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(text, mergedAnalysis);

@@ -484,6 +484,12 @@
               </select>
             </div>
             <div class="field">
+              <label for="ttsVoice">Text-to-speech voice</label>
+              <select id="ttsVoice">
+                <option value="">Browser default</option>
+              </select>
+            </div>
+            <div class="field">
               <label for="recognitionLanguage">Recognition language</label>
               <select id="recognitionLanguage">
                 <option value="en-US" data-transcribe="en">
@@ -549,6 +555,7 @@
       const advancedComputeTypeSelect = document.getElementById(
         "advancedComputeType",
       );
+      const ttsVoiceSelect = document.getElementById("ttsVoice");
       const recognitionLanguageSelect = document.getElementById(
         "recognitionLanguage",
       );
@@ -585,6 +592,7 @@
         language: defaultTranscriptionLanguage,
         ipaLanguage: "",
         vadFilter: true,
+        ttsVoice: "",
       };
 
       function loadAdvancedConfig() {
@@ -698,6 +706,11 @@
         if (vadFilterToggle) {
           vadFilterToggle.checked = Boolean(advancedConfig.vadFilter);
         }
+
+        if (ttsVoiceSelect) {
+          const selectedValue = advancedConfig.ttsVoice || "";
+          ttsVoiceSelect.value = selectedValue;
+        }
       }
 
       syncAdvancedInputsWithConfig();
@@ -757,6 +770,81 @@
       if (vadFilterToggle) {
         vadFilterToggle.addEventListener("change", (event) => {
           advancedConfig.vadFilter = Boolean(event.target.checked);
+          persistAdvancedConfig(advancedConfig);
+        });
+      }
+
+      function populateTtsVoiceOptions() {
+        if (!ttsVoiceSelect) {
+          return;
+        }
+
+        if (!("speechSynthesis" in window)) {
+          ttsVoiceSelect.innerHTML = "";
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Speech synthesis unavailable";
+          ttsVoiceSelect.append(option);
+          ttsVoiceSelect.disabled = true;
+          return;
+        }
+
+        const voices = (synth?.getVoices?.() || []).slice().sort((a, b) => {
+          const nameCompare = a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+          if (nameCompare !== 0) return nameCompare;
+          return a.lang.localeCompare(b.lang, undefined, { sensitivity: "base" });
+        });
+
+        ttsVoiceSelect.innerHTML = "";
+
+        if (voices.length === 0) {
+          const loadingOption = document.createElement("option");
+          loadingOption.value = "";
+          loadingOption.textContent = "Loading available voices…";
+          ttsVoiceSelect.append(loadingOption);
+          ttsVoiceSelect.disabled = true;
+          return;
+        }
+
+        ttsVoiceSelect.disabled = false;
+
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = "Browser default";
+        ttsVoiceSelect.append(defaultOption);
+
+        voices.forEach((voice) => {
+          const option = document.createElement("option");
+          option.value = voice.voiceURI;
+          option.textContent = `${voice.name} (${voice.lang}${voice.localService ? " · local" : ""})`;
+          ttsVoiceSelect.append(option);
+        });
+
+        const storedVoice = advancedConfig.ttsVoice || "";
+        const voiceExists = voices.some((voice) => voice.voiceURI === storedVoice);
+        if (voiceExists) {
+          ttsVoiceSelect.value = storedVoice;
+        } else {
+          ttsVoiceSelect.value = "";
+          if (storedVoice) {
+            advancedConfig.ttsVoice = "";
+            persistAdvancedConfig(advancedConfig);
+          }
+        }
+      }
+
+      if (ttsVoiceSelect) {
+        populateTtsVoiceOptions();
+        if (synth && typeof synth.addEventListener === "function") {
+          synth.addEventListener("voiceschanged", populateTtsVoiceOptions);
+        } else if (synth) {
+          synth.onvoiceschanged = populateTtsVoiceOptions;
+        }
+
+        ttsVoiceSelect.addEventListener("change", (event) => {
+          advancedConfig.ttsVoice = event.target.value || "";
           persistAdvancedConfig(advancedConfig);
         });
       }
@@ -1129,7 +1217,23 @@
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 0.95;
         utterance.pitch = 1;
-        utterance.lang = "en-US";
+        const preferredLocale =
+          advancedConfig?.recognitionLocale || defaultRecognitionLocale || "en-US";
+        let selectedVoice = null;
+        if (advancedConfig?.ttsVoice) {
+          selectedVoice = synth
+            .getVoices()
+            .find((voice) => voice.voiceURI === advancedConfig.ttsVoice);
+        }
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          if (selectedVoice.lang) {
+            utterance.lang = selectedVoice.lang;
+          }
+        }
+        if (!utterance.lang) {
+          utterance.lang = preferredLocale;
+        }
         synth.speak(utterance);
       }
 

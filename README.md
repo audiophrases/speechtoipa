@@ -2,11 +2,10 @@
 
 An interactive web exercise that helps students practise reading aloud. Pick a
 paragraph, listen to the model reader, then record yourself. A bundled local
-server transcribes the raw audio with [faster-whisper](https://github.com/guillaumekln/faster-whisper)
-and produces IPA strings via `phonemizer` + `espeak-ng`, all without relying on
-any external cloud APIs. The recognised transcript is compared against the
-source text and each word is coloured green or red to highlight potential
-pronunciation slips.
+server transcribes the raw audio with [faster-whisper](https://github.com/guillaumekln/faster-whisper),
+all without relying on any external cloud APIs. The recognised transcript is
+compared against the source text and each word is coloured green or red to
+highlight potential pronunciation slips.
 
 ## Features
 - Curated paragraph bank with approachable, imagery-rich sentences.
@@ -17,11 +16,9 @@ pronunciation slips.
 - FastAPI-powered local inference endpoint so the browser can stay offline.
 
 ## Getting Started
-1. Install the Python dependencies and speech engine:
+1. Install the Python dependencies:
    ```bash
    pip install -r requirements.txt
-   # On Debian/Ubuntu
-   sudo apt-get install espeak-ng
    ```
    The first transcription will automatically download the requested
    faster-whisper model (default: `small`) into your local cache. To control the
@@ -46,9 +43,9 @@ pronunciation slips.
 - **Speech recognition:** The browser captures raw audio with the
   `MediaRecorder` API, converts it to WAV, and posts the data to the local
   FastAPI endpoint.
-- **Transcription & phonemisation:** The Python server feeds the audio into
+- **Transcription:** The Python server feeds the audio into
   `speechtoipa.pipeline.transcribe_audio_to_ipa`, which uses faster-whisper to
-  recognise text and `espeak-ng` (via `phonemizer`) to derive IPA strings.
+  recognise text and return per-segment metadata for feedback.
 - **Comparison:** The transcript is normalised (lowercased, punctuation
   removed) and compared token by token to the source paragraph. Matching words
   are marked green; mismatches remain red so students can focus on improvement.

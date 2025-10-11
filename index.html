@@ -764,7 +764,7 @@
         if (voices.length === 0) {
           const loadingOption = document.createElement("option");
           loadingOption.value = "";
-          loadingOption.textContent = "Loading available voices…";
+          loadingOption.textContent = "Browser default";
           ttsVoiceSelect.append(loadingOption);
           ttsVoiceSelect.disabled = true;
           if (voiceRetryTimeoutId === null) {

@@ -1387,6 +1387,66 @@
         return analysis;
       }
 
+      function alignSpokenTokens(targetWords, spokenWords = [], options = {}) {
+        const {
+          confirmedCount = 0,
+          awaitingMore = false,
+          isComplete = false,
+        } = options;
+        const alignedTokens = [];
+        let alignmentFailed = false;
+        let spokenIndex = 0;
+
+        if (!Array.isArray(targetWords) || !targetWords.length) {
+          return {
+            tokens: alignedTokens,
+            alignmentFailed,
+          };
+        }
+
+        const noPendingTokens =
+          !awaitingMore && confirmedCount === spokenWords.length;
+
+        for (let i = 0; i < targetWords.length; i += 1) {
+          const target = targetWords[i]?.cleaned;
+          if (!target) {
+            continue;
+          }
+
+          if (spokenIndex >= spokenWords.length) {
+            if (noPendingTokens || isComplete) {
+              alignmentFailed = true;
+            }
+            break;
+          }
+
+          const { index: matchIndex } = findBestMatchIndex(
+            target,
+            spokenWords,
+            spokenIndex
+          );
+
+          if (matchIndex === -1) {
+            if (noPendingTokens || isComplete) {
+              alignmentFailed = true;
+            }
+            break;
+          }
+
+          alignedTokens.push(spokenWords[matchIndex]);
+          spokenIndex = matchIndex + 1;
+        }
+
+        if (isComplete && alignedTokens.length !== targetWords.length) {
+          alignmentFailed = true;
+        }
+
+        return {
+          tokens: alignedTokens,
+          alignmentFailed,
+        };
+      }
+
       function getWordFeedback(status) {
         if (!status) return "";
         const messages = [];
@@ -1654,11 +1714,22 @@
 
         const confirmedTranscript = confirmedTokens.join(" ");
         const trimmedInterimTranscript = trimmedInterimTokens.join(" ");
-        const displayTranscript = [confirmedTranscript, trimmedInterimTranscript]
+        const fallbackTranscript = [
+          confirmedTranscript,
+          trimmedInterimTranscript,
+        ]
           .filter(Boolean)
           .join(" ")
           .trim();
-        transcriptEl.textContent = displayTranscript || "…";
+        const alignment = alignSpokenTokens(targetTokens, combinedTokens, {
+          confirmedCount: confirmedTokens.length,
+          awaitingMore: isListening || trimmedInterimTokens.length > 0,
+        });
+        const alignedTranscript = alignment.tokens.join(" ").trim();
+        transcriptEl.textContent =
+          alignment.alignmentFailed || !alignedTranscript
+            ? fallbackTranscript || "…"
+            : alignedTranscript;
         resultContainer.classList.remove("hidden");
       }
 
@@ -2001,7 +2072,15 @@
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(text, mergedAnalysis);
-        transcriptEl.textContent = transcript;
+        const alignment = alignSpokenTokens(targetTokens, spokenTokens, {
+          confirmedCount: spokenTokens.length,
+          isComplete: true,
+        });
+        const alignedTranscript = alignment.tokens.join(" ").trim();
+        transcriptEl.textContent =
+          alignment.alignmentFailed || !alignedTranscript
+            ? transcript
+            : alignedTranscript;
         resultContainer.classList.remove("hidden");
       }
 

@@ -1522,6 +1522,36 @@
         return newTokens;
       }
 
+      function trimInterimOverlap(confirmedTokens, interimTokens) {
+        if (!confirmedTokens.length || !interimTokens.length) {
+          return interimTokens;
+        }
+
+        let trimmedTokens = interimTokens.slice();
+        let overlapFound = true;
+
+        while (overlapFound && trimmedTokens.length) {
+          overlapFound = false;
+          const maxOverlap = Math.min(confirmedTokens.length, trimmedTokens.length);
+          for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+            const confirmedSuffix = confirmedTokens.slice(
+              confirmedTokens.length - overlap
+            );
+            const interimPrefix = trimmedTokens.slice(0, overlap);
+            const matches = confirmedSuffix.every(
+              (token, idx) => token === interimPrefix[idx]
+            );
+            if (matches) {
+              trimmedTokens = trimmedTokens.slice(overlap);
+              overlapFound = true;
+              break;
+            }
+          }
+        }
+
+        return trimmedTokens;
+      }
+
       function handleRecognitionResult(event) {
         if (!recognitionState) return;
         const { targetTokens, targetText } = recognitionState;
@@ -1575,11 +1605,15 @@
           recognitionState.confirmedTokens = confirmedTokens;
         }
 
-        const combinedTokens = confirmedTokens.concat(interimTokens);
+        const trimmedInterimTokens = trimInterimOverlap(
+          confirmedTokens,
+          interimTokens
+        );
+        const combinedTokens = confirmedTokens.concat(trimmedInterimTokens);
         const analysis = evaluatePronunciation(targetTokens, combinedTokens, {
           confirmedCount: confirmedTokens.length,
           metadata: confirmedMeta,
-          awaitingMore: isListening || interimTokens.length > 0,
+          awaitingMore: isListening || trimmedInterimTokens.length > 0,
         });
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
@@ -1601,7 +1635,8 @@
         }
 
         const confirmedTranscript = confirmedTokens.join(" ");
-        const displayTranscript = [confirmedTranscript, interimTranscript]
+        const trimmedInterimTranscript = trimmedInterimTokens.join(" ");
+        const displayTranscript = [confirmedTranscript, trimmedInterimTranscript]
           .filter(Boolean)
           .join(" ")
           .trim();

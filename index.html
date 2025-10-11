@@ -428,6 +428,7 @@
           </button>
         </div>
         <div class="control-row">
+          <button id="playText" type="button">▶️ Play text aloud</button>
           <button id="start" type="button" class="practice-button">
             🎤 Start practice
           </button>
@@ -516,6 +517,7 @@
       const customTextInput = document.getElementById("customText");
       const helperText = customTextRow.querySelector(".helper-text");
       const addCustomTextButton = document.getElementById("addCustomText");
+      const playTextButton = document.getElementById("playText");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
       const advancedSettingsToggle = document.getElementById(
@@ -545,7 +547,11 @@
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
-      const synth = window.speechSynthesis;
+      const supportsSpeechSynthesis =
+        typeof window !== "undefined" &&
+        "speechSynthesis" in window &&
+        typeof SpeechSynthesisUtterance !== "undefined";
+      const synth = supportsSpeechSynthesis ? window.speechSynthesis : null;
       let voiceRetryTimeoutId = null;
       const SLOW_WORD_THRESHOLD_MS = 1500;
       const CLOSE_SIMILARITY_THRESHOLD = 0.5;
@@ -731,7 +737,7 @@
           return;
         }
 
-        if (!("speechSynthesis" in window)) {
+        if (!supportsSpeechSynthesis || !synth) {
           if (voiceRetryTimeoutId !== null) {
             window.clearTimeout(voiceRetryTimeoutId);
             voiceRetryTimeoutId = null;
@@ -764,6 +770,7 @@
           if (voiceRetryTimeoutId === null) {
             voiceRetryTimeoutId = window.setTimeout(() => {
               voiceRetryTimeoutId = null;
+              synth?.getVoices?.();
               populateTtsVoiceOptions();
             }, 500);
           }
@@ -802,12 +809,17 @@
       }
 
       if (ttsVoiceSelect) {
-        populateTtsVoiceOptions();
         if (synth && typeof synth.addEventListener === "function") {
           synth.addEventListener("voiceschanged", populateTtsVoiceOptions);
         } else if (synth) {
           synth.onvoiceschanged = populateTtsVoiceOptions;
         }
+
+        if (synth && typeof synth.getVoices === "function") {
+          synth.getVoices();
+        }
+
+        populateTtsVoiceOptions();
 
         ttsVoiceSelect.addEventListener("change", (event) => {
           advancedConfig.ttsVoice = event.target.value || "";
@@ -1035,6 +1047,47 @@
         return Boolean(getCustomEntryById(id));
       }
 
+      function getActivePracticeText() {
+        if (recognitionState && typeof recognitionState.targetText === "string") {
+          return recognitionState.targetText;
+        }
+
+        const selected = getSelectedParagraph();
+        if (!selected) {
+          return "";
+        }
+
+        if (isCustomParagraphId(selected.id)) {
+          return getCustomTextRaw(selected.id);
+        }
+
+        return selected.text || "";
+      }
+
+      function updatePlayButtonState() {
+        if (!playTextButton) {
+          return;
+        }
+
+        if (!supportsSpeechSynthesis || !synth) {
+          playTextButton.disabled = true;
+          playTextButton.title = "Speech synthesis is unavailable in this browser.";
+          return;
+        }
+
+        const text = getActivePracticeText().trim();
+        const shouldDisable = !text || isListening || isProcessing;
+        playTextButton.disabled = shouldDisable;
+
+        if (shouldDisable) {
+          playTextButton.title = text
+            ? "Finish the current recording before playing the text aloud."
+            : "Enter or select some text to play it aloud.";
+        } else {
+          playTextButton.title = "Play the current practice text aloud.";
+        }
+      }
+
       function renderParagraph(text, analysis = []) {
         const targetWords = tokenise(text);
         const hasAnalysis = Array.isArray(analysis) && analysis.length > 0;
@@ -1051,6 +1104,7 @@
             legendCard.classList.remove("active");
             legendCard.setAttribute("aria-hidden", "true");
           }
+          updatePlayButtonState();
           return;
         }
 
@@ -1101,32 +1155,61 @@
           customTextInput.append(span);
           customTextInput.append(document.createTextNode(" "));
         });
+
+        updatePlayButtonState();
       }
 
-      function playWord(word) {
-        if (!word || !allowWordPlayback) return;
-        if (!("speechSynthesis" in window)) return;
-        if (synth.speaking) synth.cancel();
-        const utterance = new SpeechSynthesisUtterance(word);
-        utterance.rate = 0.95;
-        utterance.pitch = 1;
+      function applyVoiceSettings(utterance, options = {}) {
+        if (!utterance || !supportsSpeechSynthesis || !synth) {
+          return;
+        }
+
+        const { rate = 0.95, pitch = 1 } = options;
+        utterance.rate = rate;
+        utterance.pitch = pitch;
+
         const preferredLocale =
           advancedConfig?.recognitionLocale || defaultRecognitionLocale || "en-US";
         let selectedVoice = null;
         if (advancedConfig?.ttsVoice) {
-          selectedVoice = synth
-            .getVoices()
-            .find((voice) => voice.voiceURI === advancedConfig.ttsVoice);
+          const availableVoices =
+            typeof synth.getVoices === "function" ? synth.getVoices() : [];
+          selectedVoice = availableVoices.find(
+            (voice) => voice.voiceURI === advancedConfig.ttsVoice,
+          );
         }
+
         if (selectedVoice) {
           utterance.voice = selectedVoice;
           if (selectedVoice.lang) {
             utterance.lang = selectedVoice.lang;
           }
         }
-        if (!utterance.lang) {
+
+        if (!utterance.lang && preferredLocale) {
           utterance.lang = preferredLocale;
         }
+      }
+
+      function playWord(word) {
+        if (!word || !allowWordPlayback) return;
+        if (!supportsSpeechSynthesis || !synth) return;
+        if (synth.speaking) synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(word);
+        applyVoiceSettings(utterance);
+        synth.speak(utterance);
+      }
+
+      function playParagraphText() {
+        if (!supportsSpeechSynthesis || !synth) return;
+        if (isListening || isProcessing) return;
+        const text = getActivePracticeText().trim();
+        if (!text) return;
+        if (synth.speaking) {
+          synth.cancel();
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        applyVoiceSettings(utterance, { rate: 0.98 });
         synth.speak(utterance);
       }
 
@@ -1353,6 +1436,7 @@
         resultContainer.classList.add("hidden");
         transcriptEl.textContent = "—";
         recognitionState = null;
+        updatePlayButtonState();
       }
 
       function toggleListening(isActive) {
@@ -1361,6 +1445,7 @@
         } else {
           listeningLabel.classList.add("hidden");
         }
+        updatePlayButtonState();
       }
 
       function toggleProcessing(isActive) {
@@ -1369,6 +1454,7 @@
         } else {
           processingLabel.classList.add("hidden");
         }
+        updatePlayButtonState();
       }
 
       function getPreferredMimeType() {
@@ -1959,10 +2045,17 @@
         addCustomTextButton.addEventListener("click", addAnotherCustomEntry);
       }
 
+      if (playTextButton) {
+        playTextButton.addEventListener("click", () => {
+          playParagraphText();
+        });
+      }
+
       startButton.addEventListener("click", startListening);
       stopButton.addEventListener("click", stopListening);
 
       populateParagraphs();
+      updatePlayButtonState();
     </script>
   </body>
 </html>

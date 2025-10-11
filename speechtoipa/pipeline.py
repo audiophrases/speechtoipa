@@ -60,6 +60,7 @@ _ESPEAK_LANG_MAP = {
     "zh": "zh",
     "zh-cn": "zh",
     "zh-tw": "zh",
+    "ca": "ca",
 }
 
 _PUNCTUATION = ";:,.!?¡¿—…\"«»“”()[]{}"

@@ -118,16 +118,16 @@
         transform: scale(0.98);
       }
 
-      button.primary {
-        background: var(--accent);
-        color: #0f172a;
+      button.practice-button {
+        background: var(--success);
+        color: #052e16;
         border: none;
         font-weight: 600;
         letter-spacing: 0.02em;
       }
 
-      button.primary:hover {
-        background: var(--accent-strong);
+      button.practice-button:hover {
+        background: #16a34a;
       }
 
       button[disabled] {
@@ -428,10 +428,9 @@
           </button>
         </div>
         <div class="control-row">
-          <button id="play" type="button" class="primary">
-            ▶️ Play model reading
+          <button id="start" type="button" class="practice-button">
+            🎤 Start practice
           </button>
-          <button id="start" type="button">🎤 Start practice</button>
           <button id="stop" type="button" disabled>⏹ Stop</button>
         </div>
         <div class="control-row advanced-row">
@@ -444,8 +443,8 @@
             ⚙️ Show advanced settings
           </button>
           <p class="helper-text">
-            Adjust the recognition model, device, language, and filters. Your
-            choices are saved for next time.
+            Adjust the recognition model, language, and filters. Your choices
+            are saved for next time.
           </p>
         </div>
         <section
@@ -455,28 +454,20 @@
         >
           <div class="advanced-grid">
             <div class="field">
-              <label for="advancedModelSize">Model size (Large v2 default)</label>
+              <label for="advancedModelSize">Model size</label>
               <select id="advancedModelSize">
                 <option value="tiny">Tiny (fastest)</option>
                 <option value="base">Base</option>
                 <option value="small">Small</option>
                 <option value="medium">Medium</option>
-                <option value="large-v2" selected>Large v2 (default)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="advancedDevice">Device</label>
-              <select id="advancedDevice">
-                <option value="cpu">CPU</option>
-                <option value="cuda">CUDA (GPU)</option>
-                <option value="auto">Auto</option>
+                <option value="large-v2" selected>Large v2</option>
               </select>
             </div>
             <div class="field">
               <label for="advancedComputeType">Compute type</label>
               <select id="advancedComputeType">
                 <option value="">Model default</option>
-                <option value="int8">int8 (CPU friendly)</option>
+                <option value="int8" selected>int8 (CPU friendly)</option>
                 <option value="int8_float16">int8 float16</option>
                 <option value="int8_float32">int8 float32</option>
                 <option value="float16">float16</option>
@@ -495,30 +486,10 @@
                 <option value="en-US" data-transcribe="en">
                   English (United States)
                 </option>
-                <option value="en-GB" data-transcribe="en">
-                  English (United Kingdom)
-                </option>
-                <option value="es-ES" data-transcribe="es">Spanish (Spain)</option>
+                <option value="ca-ES" data-transcribe="ca">Catalan (Catalonia)</option>
                 <option value="fr-FR" data-transcribe="fr">French (France)</option>
-                <option value="de-DE" data-transcribe="de">German (Germany)</option>
-                <option value="ja-JP" data-transcribe="ja">Japanese</option>
                 <option value="it-IT" data-transcribe="it">Italian (Italy)</option>
                 <option value="ar-SA" data-transcribe="ar">Arabic</option>
-                <option value="ca-ES" data-transcribe="ca">Catalan</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="ipaLanguage">IPA language override</label>
-              <select id="ipaLanguage">
-                <option value="">Match recognition language</option>
-                <option value="en">English</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-                <option value="ja">Japanese</option>
-                <option value="it">Italian</option>
-                <option value="ar">Arabic</option>
-                <option value="ca">Catalan</option>
               </select>
             </div>
           </div>
@@ -545,7 +516,6 @@
       const customTextInput = document.getElementById("customText");
       const helperText = customTextRow.querySelector(".helper-text");
       const addCustomTextButton = document.getElementById("addCustomText");
-      const playButton = document.getElementById("play");
       const startButton = document.getElementById("start");
       const stopButton = document.getElementById("stop");
       const advancedSettingsToggle = document.getElementById(
@@ -557,7 +527,6 @@
       const advancedModelSizeSelect = document.getElementById(
         "advancedModelSize",
       );
-      const advancedDeviceSelect = document.getElementById("advancedDevice");
       const advancedComputeTypeSelect = document.getElementById(
         "advancedComputeType",
       );
@@ -565,7 +534,6 @@
       const recognitionLanguageSelect = document.getElementById(
         "recognitionLanguage",
       );
-      const ipaLanguageSelect = document.getElementById("ipaLanguage");
       const vadFilterToggle = document.getElementById("vadFilterToggle");
       const listeningLabel = document.getElementById("listening");
       const processingLabel = document.getElementById("processing");
@@ -578,6 +546,7 @@
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
       const supportsSpeechRecognition = typeof SpeechRecognition === "function";
       const synth = window.speechSynthesis;
+      let voiceRetryTimeoutId = null;
       const SLOW_WORD_THRESHOLD_MS = 1500;
       const CLOSE_SIMILARITY_THRESHOLD = 0.5;
       const MATCH_LOOKAHEAD_LIMIT = 6;
@@ -593,11 +562,9 @@
 
       const defaultAdvancedConfig = {
         modelSize: "large-v2",
-        device: "cpu",
-        computeType: "",
+        computeType: "int8",
         recognitionLocale: defaultRecognitionLocale,
         language: defaultTranscriptionLanguage,
-        ipaLanguage: "",
         vadFilter: true,
         ttsVoice: "",
       };
@@ -620,7 +587,15 @@
           ...(storedConfig && typeof storedConfig === "object" ? storedConfig : {}),
         };
 
+        delete config.device;
+        delete config.ipaLanguage;
+
         config.vadFilter = storedConfig?.vadFilter !== false;
+        const hasStoredComputeType =
+          storedConfig && Object.prototype.hasOwnProperty.call(storedConfig, "computeType");
+        if (!hasStoredComputeType) {
+          config.computeType = defaultAdvancedConfig.computeType;
+        }
 
         if (!config.recognitionLocale) {
           config.recognitionLocale = defaultAdvancedConfig.recognitionLocale;
@@ -672,14 +647,6 @@
           advancedModelSizeSelect.value = advancedConfig.modelSize;
         }
 
-        if (advancedDeviceSelect) {
-          const options = Array.from(advancedDeviceSelect.options);
-          if (!options.find((option) => option.value === advancedConfig.device)) {
-            advancedConfig.device = defaultAdvancedConfig.device;
-          }
-          advancedDeviceSelect.value = advancedConfig.device;
-        }
-
         if (advancedComputeTypeSelect) {
           const options = Array.from(advancedComputeTypeSelect.options);
           if (!options.find((option) => option.value === advancedConfig.computeType)) {
@@ -700,14 +667,6 @@
             recognitionLanguageSelect.value = options[0].value;
             updateRecognitionLanguageConfig();
           }
-        }
-
-        if (ipaLanguageSelect) {
-          const options = Array.from(ipaLanguageSelect.options);
-          if (!options.find((option) => option.value === advancedConfig.ipaLanguage)) {
-            advancedConfig.ipaLanguage = defaultAdvancedConfig.ipaLanguage;
-          }
-          ipaLanguageSelect.value = advancedConfig.ipaLanguage;
         }
 
         if (vadFilterToggle) {
@@ -746,13 +705,6 @@
         });
       }
 
-      if (advancedDeviceSelect) {
-        advancedDeviceSelect.addEventListener("change", (event) => {
-          advancedConfig.device = event.target.value || defaultAdvancedConfig.device;
-          persistAdvancedConfig(advancedConfig);
-        });
-      }
-
       if (advancedComputeTypeSelect) {
         advancedComputeTypeSelect.addEventListener("change", (event) => {
           advancedConfig.computeType = event.target.value || "";
@@ -763,13 +715,6 @@
       if (recognitionLanguageSelect) {
         recognitionLanguageSelect.addEventListener("change", () => {
           updateRecognitionLanguageConfig();
-          persistAdvancedConfig(advancedConfig);
-        });
-      }
-
-      if (ipaLanguageSelect) {
-        ipaLanguageSelect.addEventListener("change", (event) => {
-          advancedConfig.ipaLanguage = event.target.value || "";
           persistAdvancedConfig(advancedConfig);
         });
       }
@@ -787,6 +732,10 @@
         }
 
         if (!("speechSynthesis" in window)) {
+          if (voiceRetryTimeoutId !== null) {
+            window.clearTimeout(voiceRetryTimeoutId);
+            voiceRetryTimeoutId = null;
+          }
           ttsVoiceSelect.innerHTML = "";
           const option = document.createElement("option");
           option.value = "";
@@ -812,9 +761,19 @@
           loadingOption.textContent = "Loading available voices…";
           ttsVoiceSelect.append(loadingOption);
           ttsVoiceSelect.disabled = true;
+          if (voiceRetryTimeoutId === null) {
+            voiceRetryTimeoutId = window.setTimeout(() => {
+              voiceRetryTimeoutId = null;
+              populateTtsVoiceOptions();
+            }, 500);
+          }
           return;
         }
 
+        if (voiceRetryTimeoutId !== null) {
+          window.clearTimeout(voiceRetryTimeoutId);
+          voiceRetryTimeoutId = null;
+        }
         ttsVoiceSelect.disabled = false;
 
         const defaultOption = document.createElement("option");
@@ -1151,7 +1110,23 @@
         const utterance = new SpeechSynthesisUtterance(word);
         utterance.rate = 0.95;
         utterance.pitch = 1;
-        utterance.lang = "en-US";
+        const preferredLocale =
+          advancedConfig?.recognitionLocale || defaultRecognitionLocale || "en-US";
+        let selectedVoice = null;
+        if (advancedConfig?.ttsVoice) {
+          selectedVoice = synth
+            .getVoices()
+            .find((voice) => voice.voiceURI === advancedConfig.ttsVoice);
+        }
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          if (selectedVoice.lang) {
+            utterance.lang = selectedVoice.lang;
+          }
+        }
+        if (!utterance.lang) {
+          utterance.lang = preferredLocale;
+        }
         synth.speak(utterance);
       }
 
@@ -1198,49 +1173,6 @@
             ? getCustomTextRaw(selected.id)
             : selected.text;
         renderParagraph(textToShow || "");
-      }
-
-      function speakParagraph() {
-        const selectedParagraph = getSelectedParagraph();
-        activeParagraphId = selectedParagraph.id;
-        const { text } = selectedParagraph;
-        if (isCustomParagraphId(selectedParagraph.id) && !text.trim()) {
-          renderParagraph(getCustomTextRaw(selectedParagraph.id) || "");
-          showSupportMessage(
-            "Enter or paste the text you want to practise before playing a model reading."
-          );
-          customTextInput.focus();
-          return;
-        }
-        if (!("speechSynthesis" in window)) {
-          supportMessage.textContent =
-            "Speech synthesis is not supported in this browser.";
-          supportMessage.classList.remove("hidden");
-          return;
-        }
-        hideSupportMessage();
-        if (synth.speaking) synth.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95;
-        utterance.pitch = 1;
-        const preferredLocale =
-          advancedConfig?.recognitionLocale || defaultRecognitionLocale || "en-US";
-        let selectedVoice = null;
-        if (advancedConfig?.ttsVoice) {
-          selectedVoice = synth
-            .getVoices()
-            .find((voice) => voice.voiceURI === advancedConfig.ttsVoice);
-        }
-        if (selectedVoice) {
-          utterance.voice = selectedVoice;
-          if (selectedVoice.lang) {
-            utterance.lang = selectedVoice.lang;
-          }
-        }
-        if (!utterance.lang) {
-          utterance.lang = preferredLocale;
-        }
-        synth.speak(utterance);
       }
 
       function normaliseTranscript(text) {
@@ -1925,24 +1857,18 @@
         const formData = new FormData();
         formData.append("audio", wavBlob, "practice.wav");
         const modelSize = advancedConfig?.modelSize || defaultAdvancedConfig.modelSize;
-        const device = advancedConfig?.device || defaultAdvancedConfig.device;
         const computeType =
           typeof advancedConfig?.computeType === "string"
             ? advancedConfig.computeType
-            : "";
+            : defaultAdvancedConfig.computeType;
         const transcriptionLanguage =
           advancedConfig?.language || defaultAdvancedConfig.language;
-        const ipaLanguage =
-          typeof advancedConfig?.ipaLanguage === "string"
-            ? advancedConfig.ipaLanguage
-            : "";
         const vadFilter = advancedConfig?.vadFilter !== false;
 
         formData.append("model_size", modelSize);
-        formData.append("device", device);
+        formData.append("device", "cpu");
         formData.append("compute_type", computeType);
         formData.append("language", transcriptionLanguage);
-        formData.append("ipa_language", ipaLanguage);
         formData.append("vad_filter", vadFilter ? "true" : "false");
 
         const response = await fetch(API_ENDPOINT, {
@@ -2033,7 +1959,6 @@
         addCustomTextButton.addEventListener("click", addAnotherCustomEntry);
       }
 
-      playButton.addEventListener("click", speakParagraph);
       startButton.addEventListener("click", startListening);
       stopButton.addEventListener("click", stopListening);
 

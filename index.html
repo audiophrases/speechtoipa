@@ -67,6 +67,45 @@
         margin: 1.5rem 0 2rem;
       }
 
+      .language-toggle-row {
+        justify-content: space-between;
+      }
+
+      .language-toggle-label {
+        font-weight: 600;
+      }
+
+      .language-toggle {
+        display: inline-flex;
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 999px;
+        padding: 0.25rem;
+        gap: 0.25rem;
+      }
+
+      .language-button {
+        border: none;
+        background: transparent;
+        color: inherit;
+        padding: 0.45rem 1rem;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease;
+      }
+
+      .language-button:hover,
+      .language-button:focus-visible {
+        background: rgba(148, 163, 184, 0.24);
+        outline: none;
+      }
+
+      .language-button.active {
+        background: var(--accent);
+        color: #02131f;
+      }
+
       .control-row {
         display: flex;
         flex-wrap: wrap;
@@ -374,6 +413,20 @@
           align-items: stretch;
         }
 
+        .language-toggle-row {
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+
+        .language-toggle {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        .language-button {
+          flex: 1;
+        }
+
         select,
         button,
         textarea {
@@ -384,14 +437,39 @@
   </head>
   <body>
     <main>
-      <h1>Pronunciation Practice</h1>
+      <h1 id="appTitle">Pronunciation Practice</h1>
       <div class="controls">
+        <div
+          class="control-row language-toggle-row"
+          role="group"
+          aria-label="Interface language"
+        >
+          <span id="interfaceLanguageLabel" class="language-toggle-label"
+            >Interface language</span
+          >
+          <div class="language-toggle">
+            <button
+              type="button"
+              class="language-button active"
+              data-language="en"
+            >
+              English
+            </button>
+            <button
+              type="button"
+              class="language-button"
+              data-language="ca"
+            >
+              Català
+            </button>
+          </div>
+        </div>
         <div class="control-row">
-          <label for="paragraph">Paragraph</label>
+          <label id="paragraphLabel" for="paragraph">Paragraph</label>
           <select id="paragraph"></select>
         </div>
         <div class="control-row stack" id="customTextRow">
-          <label for="customText">Your practice text</label>
+          <label id="customTextLabel" for="customText">Your practice text</label>
           <div class="text-input-wrapper">
             <div
               id="customText"
@@ -409,23 +487,52 @@
               aria-live="polite"
               aria-hidden="true"
             >
-              <strong>Highlight guide</strong>
+              <strong id="legendTitle">Highlight guide</strong>
               <ul>
-                <li><span style="color: var(--success); font-weight: 600;">Green</span> words sounded correct.</li>
-                <li><span style="color: var(--close); font-weight: 600;">Orange</span> words were close but need a touch more clarity.</li>
-                <li><span style="color: var(--error); font-weight: 600;">Red</span> words need another pass.</li>
-                <li><span style="color: #f59e0b; font-weight: 600;">Orange underline</span> marks slower words.</li>
-                <li><span style="color: #c084fc; font-weight: 600;">Purple underline</span> shows repeated words.</li>
+                <li id="legendCorrect">
+                  <span style="color: var(--success); font-weight: 600;">Green</span>
+                  words sounded correct.
+                </li>
+                <li id="legendClose">
+                  <span style="color: var(--close); font-weight: 600;">Orange</span>
+                  words were close but need a touch more clarity.
+                </li>
+                <li id="legendIncorrect">
+                  <span style="color: var(--error); font-weight: 600;">Red</span> words
+                  need another pass.
+                </li>
+                <li id="legendSlow">
+                  <span style="color: #f59e0b; font-weight: 600;">Orange underline</span>
+                  marks slower words.
+                </li>
+                <li id="legendRepeat">
+                  <span style="color: #c084fc; font-weight: 600;">Purple underline</span>
+                  shows repeated words.
+                </li>
               </ul>
             </div>
           </div>
-          <p class="helper-text">
+          <p id="customTextHelper" class="helper-text">
             This text is used whenever the current custom option is selected.
             Click “Add another custom text” to create more slots.
           </p>
           <button id="addCustomText" type="button" class="add-custom-button">
             ➕ Add another custom text
           </button>
+        </div>
+        <div class="control-row">
+          <label id="languageSelectLabel" for="recognitionLanguage"
+            >Language</label
+          >
+          <select id="recognitionLanguage">
+            <option value="en-US" data-transcribe="en">
+              English (United States)
+            </option>
+            <option value="ca-ES" data-transcribe="ca">Catalan (Catalonia)</option>
+            <option value="fr-FR" data-transcribe="fr">French (France)</option>
+            <option value="it-IT" data-transcribe="it">Italian (Italy)</option>
+            <option value="ar-SA" data-transcribe="ar">Arabic</option>
+          </select>
         </div>
         <div class="control-row">
           <button id="playText" type="button">▶️ Play text aloud</button>
@@ -443,9 +550,9 @@
           >
             ⚙️ Show advanced settings
           </button>
-          <p class="helper-text">
-            Adjust the recognition model, language, and filters. Your choices
-            are saved for next time.
+          <p id="advancedHelperText" class="helper-text">
+            Adjust the recognition model and filters. Your choices are saved for
+            next time.
           </p>
         </div>
         <section
@@ -481,37 +588,43 @@
                 <option value="">Browser default</option>
               </select>
             </div>
-            <div class="field">
-              <label for="recognitionLanguage">Recognition language</label>
-              <select id="recognitionLanguage">
-                <option value="en-US" data-transcribe="en">
-                  English (United States)
-                </option>
-                <option value="ca-ES" data-transcribe="ca">Catalan (Catalonia)</option>
-                <option value="fr-FR" data-transcribe="fr">French (France)</option>
-                <option value="it-IT" data-transcribe="it">Italian (Italy)</option>
-                <option value="ar-SA" data-transcribe="ar">Arabic</option>
-              </select>
-            </div>
           </div>
           <label class="toggle" for="vadFilterToggle">
             <input type="checkbox" id="vadFilterToggle" />
-            <span>Apply voice activity detection (helps trim silence)</span>
+            <span id="vadFilterLabel"
+              >Apply voice activity detection (helps trim silence)</span
+            >
           </label>
         </section>
       </div>
       <section id="status" class="status">
         <p id="supportMessage" class="hidden"></p>
-        <p class="hidden" id="listening">Listening… speak clearly into your microphone.</p>
+        <p class="hidden" id="listening">
+          Listening… speak clearly into your microphone.
+        </p>
         <p class="hidden" id="processing">Processing recording…</p>
         <div class="hidden" id="result">
-          <strong>Recognised transcript</strong>
+          <strong id="transcriptHeading">Recognised transcript</strong>
           <div class="transcript" id="transcript">—</div>
         </div>
       </section>
     </main>
 
     <script>
+      const htmlElement = document.documentElement;
+      const appTitle = document.getElementById("appTitle");
+      const interfaceLanguageLabel = document.getElementById(
+        "interfaceLanguageLabel",
+      );
+      const languageToggleRow = document.querySelector(".language-toggle-row");
+      const languageButtons = Array.from(
+        document.querySelectorAll(".language-button"),
+      );
+      const paragraphLabelEl = document.getElementById("paragraphLabel");
+      const customTextLabelEl = document.getElementById("customTextLabel");
+      const languageSelectLabelEl = document.getElementById(
+        "languageSelectLabel",
+      );
       const paragraphSelect = document.getElementById("paragraph");
       const customTextRow = document.getElementById("customTextRow");
       const customTextInput = document.getElementById("customText");
@@ -532,17 +645,33 @@
       const advancedComputeTypeSelect = document.getElementById(
         "advancedComputeType",
       );
+      const advancedModelSizeLabel = document.querySelector(
+        'label[for="advancedModelSize"]',
+      );
+      const advancedComputeTypeLabel = document.querySelector(
+        'label[for="advancedComputeType"]',
+      );
+      const ttsVoiceLabelEl = document.querySelector('label[for="ttsVoice"]');
       const ttsVoiceSelect = document.getElementById("ttsVoice");
+      const advancedHelperTextEl = document.getElementById("advancedHelperText");
       const recognitionLanguageSelect = document.getElementById(
         "recognitionLanguage",
       );
+      const vadFilterLabelEl = document.getElementById("vadFilterLabel");
       const vadFilterToggle = document.getElementById("vadFilterToggle");
       const listeningLabel = document.getElementById("listening");
       const processingLabel = document.getElementById("processing");
       const resultContainer = document.getElementById("result");
       const transcriptEl = document.getElementById("transcript");
       const supportMessage = document.getElementById("supportMessage");
+      const transcriptHeadingEl = document.getElementById("transcriptHeading");
       const legendCard = document.getElementById("legendCard");
+      const legendTitleEl = document.getElementById("legendTitle");
+      const legendCorrectEl = document.getElementById("legendCorrect");
+      const legendCloseEl = document.getElementById("legendClose");
+      const legendIncorrectEl = document.getElementById("legendIncorrect");
+      const legendSlowEl = document.getElementById("legendSlow");
+      const legendRepeatEl = document.getElementById("legendRepeat");
 
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -565,6 +694,477 @@
           : "en-US";
       const defaultTranscriptionLanguage =
         defaultRecognitionLocale.split("-")[0] || "en";
+
+      const UI_LANGUAGE_STORAGE_KEY = "speechtoipa:ui-language";
+
+      const translations = {
+        en: {
+          documentTitle: "Pronunciation Practice",
+          appHeading: "Pronunciation Practice",
+          interfaceLanguageLabel: "Interface language",
+          interfaceLanguageAriaLabel: "Interface language",
+          interfaceLanguageEnglish: "English",
+          interfaceLanguageCatalan: "Català",
+          paragraphLabel: "Paragraph",
+          customTextLabel: "Your practice text",
+          customTextPlaceholder: "Type or paste the text you want to practise.",
+          customHelper:
+            "This text is used whenever the current custom option is selected. Click “Add another custom text” to create more slots.",
+          customSavedHelper:
+            "This saved text is editable below. Use the dropdown to switch between your custom passages.",
+          presetHelper:
+            "This passage comes from the list above. Select “Custom text” to enter your own.",
+          addCustomText: "➕ Add another custom text",
+          languageSelectLabel: "Language",
+          playButtonLabel: "▶️ Play text aloud",
+          startButtonLabel: "🎤 Start practice",
+          stopButtonLabel: "⏹ Stop",
+          advancedToggleShow: "⚙️ Show advanced settings",
+          advancedToggleHide: "⚙️ Hide advanced settings",
+          advancedHelper:
+            "Adjust the recognition model and filters. Your choices are saved for next time.",
+          modelSizeLabel: "Model size",
+          computeTypeLabel: "Compute type",
+          ttsVoiceLabel: "Text-to-speech voice",
+          ttsVoiceDefault: "Browser default",
+          ttsVoiceUnavailable: "Speech synthesis unavailable",
+          vadLabel: "Apply voice activity detection (helps trim silence)",
+          listening: "Listening… speak clearly into your microphone.",
+          processing: "Processing recording…",
+          transcriptHeading: "Recognised transcript",
+          legendTitle: "Highlight guide",
+          legendCorrect:
+            '<span style="color: var(--success); font-weight: 600;">Green</span> words sounded correct.',
+          legendClose:
+            '<span style="color: var(--close); font-weight: 600;">Orange</span> words were close but need a touch more clarity.',
+          legendIncorrect:
+            '<span style="color: var(--error); font-weight: 600;">Red</span> words need another pass.',
+          legendSlow:
+            '<span style="color: #f59e0b; font-weight: 600;">Orange underline</span> marks slower words.',
+          legendRepeat:
+            '<span style="color: #c084fc; font-weight: 600;">Purple underline</span> shows repeated words.',
+          legendHelper: "Click a highlighted word to hear it pronounced again.",
+          customPlaceholder: "Type or paste your own practice text in the box above.",
+          customDefaultLabel: "Custom text (enter below)",
+          customNumberedLabel: (n) => `Custom text ${n}`,
+          playButtonTitleNoSpeech:
+            "Speech synthesis is unavailable in this browser.",
+          playButtonTitleRecording:
+            "Finish the current recording before playing the text aloud.",
+          playButtonTitleMissingText:
+            "Enter or select some text to play it aloud.",
+          playButtonTitleReady: "Play the current practice text aloud.",
+          recognitionUnavailable:
+            "Speech recognition is unavailable in this browser.",
+          microphonePermissionDenied:
+            "Microphone permission was denied. Please allow access and try again.",
+          speechRecognitionIssue: "Speech recognition encountered an issue.",
+          speechRecognitionStartError:
+            "Speech recognition could not be started.",
+          mediaRecorderUnsupported:
+            "MediaRecorder is not supported in this browser. Try a modern Chromium-based browser.",
+          microphoneUnavailable: "Unable to access the microphone.",
+          recorderFailed: "Failed to start audio recorder.",
+          wordPronunciation: (word) => `Hear model pronunciation for “${word}”.`,
+          wordGeneric: (word) => `Word “${word}”.`,
+          feedbackCorrect: "Pronounced correctly.",
+          feedbackClose: "Close match—sounds similar but could be clearer.",
+          feedbackIncorrect: "Did not match the expected pronunciation.",
+          feedbackPending: "Awaiting pronunciation.",
+          feedbackProvisional: "Result is provisional.",
+          feedbackSlow: "Spoken slowly.",
+          feedbackRepeated: "Repeated word.",
+          transcriptPlaceholder: "—",
+          transcriptPending: "…",
+          customTextRequired:
+            "Enter or paste the text you want to practise before starting a recording.",
+          noAudioCaptured: "No audio was captured. Please try again.",
+          processingErrorFallback:
+            "Something went wrong while processing the recording.",
+          transcriptionRequestFailed: "Transcription request failed",
+          noSpeechRecognised: "No speech was recognised. Please try again.",
+          recognitionOptionEn: "English (United States)",
+          recognitionOptionCa: "Catalan (Catalonia)",
+          recognitionOptionFr: "French (France)",
+          recognitionOptionIt: "Italian (Italy)",
+          recognitionOptionAr: "Arabic",
+        },
+        ca: {
+          documentTitle: "Pràctica de pronunciació",
+          appHeading: "Pràctica de pronunciació",
+          interfaceLanguageLabel: "Idioma de la interfície",
+          interfaceLanguageAriaLabel: "Idioma de la interfície",
+          interfaceLanguageEnglish: "Anglès",
+          interfaceLanguageCatalan: "Català",
+          paragraphLabel: "Paràgraf",
+          customTextLabel: "El teu text de pràctica",
+          customTextPlaceholder: "Escriu o enganxa el text amb què vols practicar.",
+          customHelper:
+            "Aquest text s'utilitza sempre que es selecciona l'opció personalitzada actual. Fes clic a “Afegeix un altre text personalitzat” per crear més espais.",
+          customSavedHelper:
+            "Aquest text desat es pot editar a continuació. Utilitza el desplegable per canviar entre els teus textos personalitzats.",
+          presetHelper:
+            "Aquest fragment prové de la llista anterior. Selecciona “Text personalitzat” per introduir el teu propi.",
+          addCustomText: "➕ Afegeix un altre text personalitzat",
+          languageSelectLabel: "Idioma",
+          playButtonLabel: "▶️ Reprodueix el text en veu alta",
+          startButtonLabel: "🎤 Comença la pràctica",
+          stopButtonLabel: "⏹ Atura",
+          advancedToggleShow: "⚙️ Mostra la configuració avançada",
+          advancedToggleHide: "⚙️ Amaga la configuració avançada",
+          advancedHelper:
+            "Ajusta el model de reconeixement i els filtres. Les teves opcions es desen per a la pròxima vegada.",
+          modelSizeLabel: "Mida del model",
+          computeTypeLabel: "Tipus de còmput",
+          ttsVoiceLabel: "Veu de text a veu",
+          ttsVoiceDefault: "Per defecte del navegador",
+          ttsVoiceUnavailable: "Síntesi de veu no disponible",
+          vadLabel:
+            "Aplica detecció d'activitat vocal (ajuda a retallar silencis)",
+          listening: "Escoltant… parla amb claredat al micròfon.",
+          processing: "Processant la gravació…",
+          transcriptHeading: "Transcripció reconeguda",
+          legendTitle: "Guia de ressaltat",
+          legendCorrect:
+            '<span style="color: var(--success); font-weight: 600;">Verd</span> indica que les paraules han sonat correctes.',
+          legendClose:
+            '<span style="color: var(--close); font-weight: 600;">Taronja</span> indica paraules semblants però que necessiten una mica més de claredat.',
+          legendIncorrect:
+            '<span style="color: var(--error); font-weight: 600;">Vermell</span> indica paraules que cal repetir.',
+          legendSlow:
+            '<span style="color: #f59e0b; font-weight: 600;">Subratllat taronja</span> marca paraules més lentes.',
+          legendRepeat:
+            '<span style="color: #c084fc; font-weight: 600;">Subratllat lila</span> mostra paraules repetides.',
+          legendHelper: "Fes clic a una paraula ressaltada per tornar-la a escoltar.",
+          customPlaceholder:
+            "Escriu o enganxa el teu propi text de pràctica al quadre superior.",
+          customDefaultLabel: "Text personalitzat (escriu-lo a continuació)",
+          customNumberedLabel: (n) => `Text personalitzat ${n}`,
+          playButtonTitleNoSpeech:
+            "La síntesi de veu no està disponible en aquest navegador.",
+          playButtonTitleRecording:
+            "Acaba la gravació actual abans de reproduir el text en veu alta.",
+          playButtonTitleMissingText:
+            "Introdueix o selecciona un text per reproduir-lo en veu alta.",
+          playButtonTitleReady:
+            "Reprodueix en veu alta el text de pràctica actual.",
+          recognitionUnavailable:
+            "El reconeixement de veu no està disponible en aquest navegador.",
+          microphonePermissionDenied:
+            "S'ha denegat el permís del micròfon. Permet-ne l'accés i torna-ho a provar.",
+          speechRecognitionIssue:
+            "Hi ha hagut un problema amb el reconeixement de veu.",
+          speechRecognitionStartError:
+            "No s'ha pogut iniciar el reconeixement de veu.",
+          mediaRecorderUnsupported:
+            "El MediaRecorder no és compatible amb aquest navegador. Prova amb un navegador modern basat en Chromium.",
+          microphoneUnavailable: "No s'ha pogut accedir al micròfon.",
+          recorderFailed: "No s'ha pogut iniciar l'enregistrador d'àudio.",
+          wordPronunciation: (word) =>
+            `Escolta la pronunciació del model de “${word}”.`,
+          wordGeneric: (word) => `Paraula “${word}”.`,
+          feedbackCorrect: "Pronunciada correctament.",
+          feedbackClose:
+            "Coincidència propera—sona semblant però podria ser més clara.",
+          feedbackIncorrect:
+            "No coincideix amb la pronunciació esperada.",
+          feedbackPending: "Esperant la pronunciació.",
+          feedbackProvisional: "El resultat és provisional.",
+          feedbackSlow: "Pronunciada lentament.",
+          feedbackRepeated: "Paraula repetida.",
+          transcriptPlaceholder: "—",
+          transcriptPending: "…",
+          customTextRequired:
+            "Introdueix o enganxa el text amb què vols practicar abans de començar a gravar.",
+          noAudioCaptured: "No s'ha capturat cap àudio. Torna-ho a provar.",
+          processingErrorFallback:
+            "S'ha produït un error en processar la gravació.",
+          transcriptionRequestFailed: "La sol·licitud de transcripció ha fallat",
+          noSpeechRecognised: "No s'ha reconegut cap veu. Torna-ho a provar.",
+          recognitionOptionEn: "Anglès (Estats Units)",
+          recognitionOptionCa: "Català (Catalunya)",
+          recognitionOptionFr: "Francès (França)",
+          recognitionOptionIt: "Italià (Itàlia)",
+          recognitionOptionAr: "Àrab",
+        },
+      };
+
+      function loadUiLanguage() {
+        if (typeof localStorage !== "undefined") {
+          try {
+            const stored = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY);
+            if (stored && translations[stored]) {
+              return stored;
+            }
+          } catch (error) {
+            console.warn("Failed to read stored UI language", error);
+          }
+        }
+
+        const browserLang =
+          (navigator.language || navigator.userLanguage || "en")
+            .toLowerCase()
+            .slice(0, 2);
+        if (translations[browserLang]) {
+          return browserLang;
+        }
+        return "en";
+      }
+
+      function persistUiLanguage(lang) {
+        if (typeof localStorage === "undefined") {
+          return;
+        }
+        try {
+          localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, lang);
+        } catch (error) {
+          console.warn("Failed to persist UI language", error);
+        }
+      }
+
+      let uiLanguage = loadUiLanguage();
+
+      function t(key, arg) {
+        const pack = translations[uiLanguage] || translations.en;
+        const fallback = translations.en;
+        let value = pack[key];
+        if (typeof value === "undefined") {
+          value = fallback[key];
+        }
+        if (typeof value === "function") {
+          return value(arg);
+        }
+        return value;
+      }
+
+      function createCustomEntry(id, type = "base", order = 1) {
+        return {
+          id,
+          type,
+          order,
+          get label() {
+            if (this.type === "base") {
+              return t("customDefaultLabel");
+            }
+            if (this.type === "saved") {
+              return t("customNumberedLabel", this.order);
+            }
+            return "";
+          },
+          get helperText() {
+            if (this.type === "base") {
+              return t("customHelper");
+            }
+            if (this.type === "saved") {
+              return t("customSavedHelper");
+            }
+            return "";
+          },
+          get placeholder() {
+            return t("customPlaceholder");
+          },
+        };
+      }
+
+      function updateLanguageButtonStates() {
+        if (!languageButtons || languageButtons.length === 0) {
+          return;
+        }
+        languageButtons.forEach((button) => {
+          const buttonLang = button.dataset.language || "en";
+          if (buttonLang === "en") {
+            button.textContent = t("interfaceLanguageEnglish");
+          } else if (buttonLang === "ca") {
+            button.textContent = t("interfaceLanguageCatalan");
+          }
+          button.classList.toggle("active", buttonLang === uiLanguage);
+          button.setAttribute(
+            "aria-pressed",
+            buttonLang === uiLanguage ? "true" : "false",
+          );
+        });
+      }
+
+      function applyRecognitionLanguageLabels() {
+        if (!recognitionLanguageSelect) {
+          return;
+        }
+        const optionLabels = {
+          "en-US": t("recognitionOptionEn"),
+          "ca-ES": t("recognitionOptionCa"),
+          "fr-FR": t("recognitionOptionFr"),
+          "it-IT": t("recognitionOptionIt"),
+          "ar-SA": t("recognitionOptionAr"),
+        };
+        Array.from(recognitionLanguageSelect.options).forEach((option) => {
+          const label = optionLabels[option.value];
+          if (label) {
+            option.textContent = label;
+          }
+        });
+      }
+
+      function updateAdvancedToggleText() {
+        if (!advancedSettingsToggle || !advancedSettingsPanel) {
+          return;
+        }
+        const isHidden = advancedSettingsPanel.classList.contains("hidden");
+        advancedSettingsToggle.setAttribute(
+          "aria-expanded",
+          isHidden ? "false" : "true",
+        );
+        advancedSettingsToggle.textContent = isHidden
+          ? t("advancedToggleShow")
+          : t("advancedToggleHide");
+      }
+
+      function applyStaticTranslations() {
+        if (htmlElement) {
+          htmlElement.lang = uiLanguage;
+        }
+        document.title = t("documentTitle");
+        if (appTitle) {
+          appTitle.textContent = t("appHeading");
+        }
+        if (languageToggleRow) {
+          languageToggleRow.setAttribute(
+            "aria-label",
+            t("interfaceLanguageAriaLabel"),
+          );
+        }
+        if (interfaceLanguageLabel) {
+          interfaceLanguageLabel.textContent = t("interfaceLanguageLabel");
+        }
+        updateLanguageButtonStates();
+        if (paragraphLabelEl) {
+          paragraphLabelEl.textContent = t("paragraphLabel");
+        }
+        if (customTextLabelEl) {
+          customTextLabelEl.textContent = t("customTextLabel");
+        }
+        if (languageSelectLabelEl) {
+          languageSelectLabelEl.textContent = t("languageSelectLabel");
+        }
+        if (addCustomTextButton) {
+          addCustomTextButton.textContent = t("addCustomText");
+        }
+        if (playTextButton) {
+          playTextButton.textContent = t("playButtonLabel");
+        }
+        if (startButton) {
+          startButton.textContent = t("startButtonLabel");
+        }
+        if (stopButton) {
+          stopButton.textContent = t("stopButtonLabel");
+        }
+        if (advancedHelperTextEl) {
+          advancedHelperTextEl.textContent = t("advancedHelper");
+        }
+        if (advancedModelSizeLabel) {
+          advancedModelSizeLabel.textContent = t("modelSizeLabel");
+        }
+        if (advancedComputeTypeLabel) {
+          advancedComputeTypeLabel.textContent = t("computeTypeLabel");
+        }
+        if (ttsVoiceLabelEl) {
+          ttsVoiceLabelEl.textContent = t("ttsVoiceLabel");
+        }
+        if (vadFilterLabelEl) {
+          vadFilterLabelEl.textContent = t("vadLabel");
+        }
+        if (listeningLabel) {
+          listeningLabel.textContent = t("listening");
+        }
+        if (processingLabel) {
+          processingLabel.textContent = t("processing");
+        }
+        if (transcriptHeadingEl) {
+          transcriptHeadingEl.textContent = t("transcriptHeading");
+        }
+        if (legendTitleEl) {
+          legendTitleEl.textContent = t("legendTitle");
+        }
+        if (legendCorrectEl) {
+          legendCorrectEl.innerHTML = t("legendCorrect");
+        }
+        if (legendCloseEl) {
+          legendCloseEl.innerHTML = t("legendClose");
+        }
+        if (legendIncorrectEl) {
+          legendIncorrectEl.innerHTML = t("legendIncorrect");
+        }
+        if (legendSlowEl) {
+          legendSlowEl.innerHTML = t("legendSlow");
+        }
+        if (legendRepeatEl) {
+          legendRepeatEl.innerHTML = t("legendRepeat");
+        }
+        applyRecognitionLanguageLabels();
+        updateAdvancedToggleText();
+
+        if (customTextInput) {
+          if (customTextInput.classList.contains("interactive")) {
+            helperText.textContent = t("legendHelper");
+          } else {
+            const selected = getSelectedParagraph();
+            if (selected && isCustomParagraphId(selected.id)) {
+              const entry = getCustomEntryById(selected.id);
+              if (entry) {
+                customTextInput.dataset.placeholder = entry.placeholder;
+                helperText.textContent = entry.helperText;
+              }
+            } else {
+              customTextInput.dataset.placeholder = "";
+              helperText.textContent = t("presetHelper");
+            }
+          }
+        }
+
+        if (transcriptEl) {
+          const placeholderValues = [
+            translations.en.transcriptPlaceholder,
+            translations.ca.transcriptPlaceholder,
+          ];
+          const pendingValues = [
+            translations.en.transcriptPending,
+            translations.ca.transcriptPending,
+          ];
+          const current = (transcriptEl.textContent || "").trim();
+          if (placeholderValues.includes(current)) {
+            transcriptEl.textContent = t("transcriptPlaceholder");
+          } else if (pendingValues.includes(current)) {
+            transcriptEl.textContent = t("transcriptPending");
+          }
+        }
+
+        updatePlayButtonState();
+      }
+
+      function setUiLanguage(lang) {
+        const nextLanguage = translations[lang] ? lang : "en";
+        if (uiLanguage === nextLanguage) {
+          updateLanguageButtonStates();
+          updateAdvancedToggleText();
+          return;
+        }
+        uiLanguage = nextLanguage;
+        persistUiLanguage(nextLanguage);
+        const currentSelection =
+          activeParagraphId || paragraphSelect?.value || CUSTOM_OPTION_ID;
+        applyStaticTranslations();
+        rebuildParagraphOptions(currentSelection);
+        if (recognitionState && recognitionState.targetText) {
+          const existingAnalysis = Array.isArray(recognitionState.lockedAnalysis)
+            ? recognitionState.lockedAnalysis.map((entry) =>
+                entry ? { ...entry } : createEmptyStatus(),
+              )
+            : [];
+          renderParagraph(recognitionState.targetText, existingAnalysis);
+        } else {
+          displaySelectedParagraph();
+        }
+        updatePlayButtonState();
+      }
 
       const defaultAdvancedConfig = {
         modelSize: "large-v2",
@@ -599,7 +1199,7 @@
         config.vadFilter = storedConfig?.vadFilter !== false;
         const hasStoredComputeType =
           storedConfig && Object.prototype.hasOwnProperty.call(storedConfig, "computeType");
-        if (!hasStoredComputeType) {
+        if (!hasStoredComputeType || !config.computeType) {
           config.computeType = defaultAdvancedConfig.computeType;
         }
 
@@ -690,17 +1290,19 @@
       persistAdvancedConfig(advancedConfig);
 
       if (advancedSettingsToggle && advancedSettingsPanel) {
-        advancedSettingsToggle.textContent = "⚙️ Show advanced settings";
+        updateAdvancedToggleText();
         advancedSettingsToggle.addEventListener("click", () => {
-          const isHidden = advancedSettingsPanel.classList.contains("hidden");
           advancedSettingsPanel.classList.toggle("hidden");
-          advancedSettingsToggle.setAttribute(
-            "aria-expanded",
-            isHidden ? "true" : "false",
-          );
-          advancedSettingsToggle.textContent = isHidden
-            ? "⚙️ Hide advanced settings"
-            : "⚙️ Show advanced settings";
+          updateAdvancedToggleText();
+        });
+      }
+
+      if (languageButtons.length) {
+        languageButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const targetLang = button.dataset.language || "en";
+            setUiLanguage(targetLang);
+          });
         });
       }
 
@@ -745,7 +1347,7 @@
           ttsVoiceSelect.innerHTML = "";
           const option = document.createElement("option");
           option.value = "";
-          option.textContent = "Speech synthesis unavailable";
+          option.textContent = t("ttsVoiceUnavailable");
           ttsVoiceSelect.append(option);
           ttsVoiceSelect.disabled = true;
           return;
@@ -764,7 +1366,7 @@
         if (voices.length === 0) {
           const loadingOption = document.createElement("option");
           loadingOption.value = "";
-          loadingOption.textContent = "Browser default";
+          loadingOption.textContent = t("ttsVoiceDefault");
           ttsVoiceSelect.append(loadingOption);
           ttsVoiceSelect.disabled = true;
           if (voiceRetryTimeoutId === null) {
@@ -785,7 +1387,7 @@
 
         const defaultOption = document.createElement("option");
         defaultOption.value = "";
-        defaultOption.textContent = "Browser default";
+        defaultOption.textContent = t("ttsVoiceDefault");
         ttsVoiceSelect.append(defaultOption);
 
         voices.forEach((voice) => {
@@ -826,23 +1428,7 @@
           persistAdvancedConfig(advancedConfig);
         });
       }
-      const CUSTOM_PLACEHOLDER_TEXT =
-        "Type or paste your own practice text in the box above.";
-      const CUSTOM_HELPER_TEXT =
-        "This text is used whenever the current custom option is selected. Click “Add another custom text” to create more slots.";
-      const PRESET_HELPER_TEXT =
-        "This passage comes from the list above. Select “Custom text” to enter your own.";
-      const CUSTOM_SAVED_HELPER_TEXT =
-        "This saved text is editable below. Use the dropdown to switch between your custom passages.";
-
-      const customEntries = [
-        {
-          id: CUSTOM_OPTION_ID,
-          label: "Custom text (enter below)",
-          helperText: CUSTOM_HELPER_TEXT,
-          placeholder: CUSTOM_PLACEHOLDER_TEXT,
-        },
-      ];
+      const customEntries = [createCustomEntry(CUSTOM_OPTION_ID, "base", 1)];
       const customTexts = new Map([[CUSTOM_OPTION_ID, ""]]);
       let customEntryCount = 1;
 
@@ -985,13 +1571,13 @@
           customTextInput.setAttribute("contenteditable", "true");
           customTextInput.setAttribute("aria-readonly", "false");
           customTextInput.dataset.placeholder =
-            customEntry.placeholder || CUSTOM_PLACEHOLDER_TEXT;
-          helperText.textContent = customEntry.helperText || CUSTOM_HELPER_TEXT;
+            customEntry.placeholder || t("customPlaceholder");
+          helperText.textContent = customEntry.helperText || t("customHelper");
         } else {
           customTextInput.setAttribute("contenteditable", "false");
           customTextInput.setAttribute("aria-readonly", "true");
           customTextInput.dataset.placeholder = "";
-          helperText.textContent = PRESET_HELPER_TEXT;
+          helperText.textContent = t("presetHelper");
         }
       }
 
@@ -1006,12 +1592,7 @@
       function addAnotherCustomEntry() {
         customEntryCount += 1;
         const id = `${CUSTOM_OPTION_ID}-${customEntryCount}`;
-        const entry = {
-          id,
-          label: `Custom text ${customEntryCount}`,
-          helperText: CUSTOM_SAVED_HELPER_TEXT,
-          placeholder: CUSTOM_PLACEHOLDER_TEXT,
-        };
+        const entry = createCustomEntry(id, "saved", customEntryCount);
         customEntries.push(entry);
         setCustomText(id, "");
         rebuildParagraphOptions(id);
@@ -1071,7 +1652,7 @@
 
         if (!supportsSpeechSynthesis || !synth) {
           playTextButton.disabled = true;
-          playTextButton.title = "Speech synthesis is unavailable in this browser.";
+          playTextButton.title = t("playButtonTitleNoSpeech");
           return;
         }
 
@@ -1081,10 +1662,10 @@
 
         if (shouldDisable) {
           playTextButton.title = text
-            ? "Finish the current recording before playing the text aloud."
-            : "Enter or select some text to play it aloud.";
+            ? t("playButtonTitleRecording")
+            : t("playButtonTitleMissingText");
         } else {
-          playTextButton.title = "Play the current practice text aloud.";
+          playTextButton.title = t("playButtonTitleReady");
         }
       }
 
@@ -1112,7 +1693,7 @@
         customTextInput.classList.add("interactive");
         customTextInput.setAttribute("contenteditable", "false");
         customTextInput.setAttribute("aria-readonly", "true");
-        helperText.textContent = "Click a highlighted word to hear it pronounced again.";
+        helperText.textContent = t("legendHelper");
         if (legendCard) {
           legendCard.classList.remove("active");
           legendCard.setAttribute("aria-hidden", "true");
@@ -1129,16 +1710,16 @@
             ? analysis[idx] || createEmptyStatus()
             : createEmptyStatus();
 
-          const wordLabel = span.dataset.word || word.original;
-          const feedback = getWordFeedback(status);
-          const actionLabel = allowWordPlayback
-            ? `Hear model pronunciation for “${wordLabel}”.`
-            : `Word “${wordLabel}”.`;
+        const wordLabel = span.dataset.word || word.original;
+        const feedback = getWordFeedback(status);
+        const actionLabel = allowWordPlayback
+          ? t("wordPronunciation", wordLabel)
+          : t("wordGeneric", wordLabel);
 
-          span.setAttribute(
-            "aria-label",
-            feedback ? `${actionLabel} ${feedback}` : actionLabel
-          );
+        span.setAttribute(
+          "aria-label",
+          feedback ? `${actionLabel} ${feedback}` : actionLabel
+        );
 
           if (feedback) {
             span.title = feedback;
@@ -1453,30 +2034,30 @@
 
         switch (status.correctness) {
           case "correct":
-            messages.push("Pronounced correctly.");
+            messages.push(t("feedbackCorrect"));
             break;
           case "close":
-            messages.push("Close match—sounds similar but could be clearer.");
+            messages.push(t("feedbackClose"));
             break;
           case "incorrect":
-            messages.push("Did not match the expected pronunciation.");
+            messages.push(t("feedbackIncorrect"));
             break;
           case "pending":
           default:
-            messages.push("Awaiting pronunciation.");
+            messages.push(t("feedbackPending"));
             break;
         }
 
         if (status.correctness !== "pending" && status.provisional) {
-          messages.push("Result is provisional.");
+          messages.push(t("feedbackProvisional"));
         }
 
         if (status.slow) {
-          messages.push("Spoken slowly.");
+          messages.push(t("feedbackSlow"));
         }
 
         if (status.repeated) {
-          messages.push("Repeated word.");
+          messages.push(t("feedbackRepeated"));
         }
 
         return messages.join(" ");
@@ -1546,7 +2127,9 @@
           confirmedTokens: [],
         };
         renderParagraph(paragraph.text);
-        transcriptEl.textContent = showTranscript ? "…" : "—";
+        transcriptEl.textContent = showTranscript
+          ? t("transcriptPending")
+          : t("transcriptPlaceholder");
         if (showTranscript) {
           resultContainer.classList.remove("hidden");
         } else {
@@ -1728,7 +2311,7 @@
         const alignedTranscript = alignment.tokens.join(" ").trim();
         transcriptEl.textContent =
           alignment.alignmentFailed || !alignedTranscript
-            ? fallbackTranscript || "…"
+            ? fallbackTranscript || t("transcriptPending")
             : alignedTranscript;
         resultContainer.classList.remove("hidden");
       }
@@ -1738,7 +2321,7 @@
           recognition = new SpeechRecognition();
         } catch (error) {
           console.error(error);
-          showSupportMessage("Speech recognition is unavailable in this browser.");
+          showSupportMessage(t("recognitionUnavailable"));
           return false;
         }
 
@@ -1784,8 +2367,8 @@
           toggleListening(false);
           showSupportMessage(
             event.error === "not-allowed"
-              ? "Microphone permission was denied. Please allow access and try again."
-              : "Speech recognition encountered an issue."
+              ? t("microphonePermissionDenied")
+              : t("speechRecognitionIssue")
           );
           shouldRestartRecognition = false;
           startButton.disabled = false;
@@ -1802,7 +2385,7 @@
         } catch (error) {
           console.error(error);
           shouldRestartRecognition = false;
-          showSupportMessage("Speech recognition could not be started.");
+          showSupportMessage(t("speechRecognitionStartError"));
           startButton.disabled = false;
           stopButton.disabled = true;
           return false;
@@ -1814,7 +2397,7 @@
       async function startMediaRecorderSession(paragraph) {
         if (typeof MediaRecorder === "undefined") {
           showSupportMessage(
-            "MediaRecorder is not supported in this browser. Try a modern Chromium-based browser."
+            t("mediaRecorderUnsupported")
           );
           startButton.disabled = true;
           stopButton.disabled = true;
@@ -1826,8 +2409,8 @@
         } catch (error) {
           showSupportMessage(
             error.name === "NotAllowedError"
-              ? "Microphone permission was denied. Please allow access and try again."
-              : "Unable to access the microphone."
+              ? t("microphonePermissionDenied")
+              : t("microphoneUnavailable")
           );
           return;
         }
@@ -1837,7 +2420,7 @@
         try {
           mediaRecorder = new MediaRecorder(activeStream, mimeType ? { mimeType } : undefined);
         } catch (error) {
-          showSupportMessage("Failed to start audio recorder.");
+          showSupportMessage(t("recorderFailed"));
           activeStream.getTracks().forEach((track) => track.stop());
           activeStream = null;
           return;
@@ -1871,7 +2454,7 @@
         ) {
           renderParagraph(getCustomTextRaw(selectedParagraph.id) || "");
           showSupportMessage(
-            "Enter or paste the text you want to practise before starting a recording."
+            t("customTextRequired")
           );
           customTextInput.focus();
           return;
@@ -1919,7 +2502,7 @@
         startButton.disabled = true;
 
         if (!recordedChunks.length) {
-          showSupportMessage("No audio was captured. Please try again.");
+          showSupportMessage(t("noAudioCaptured"));
           startButton.disabled = false;
           return;
         }
@@ -1932,7 +2515,7 @@
         } catch (error) {
           console.error(error);
           showSupportMessage(
-            error?.message || "Something went wrong while processing the recording."
+            error?.message || t("processingErrorFallback")
           );
         } finally {
           isProcessing = false;
@@ -2035,7 +2618,7 @@
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(errorText || "Transcription request failed");
+          throw new Error(errorText || t("transcriptionRequestFailed"));
         }
 
         const payload = await response.json();
@@ -2054,7 +2637,7 @@
         const { text } = paragraph;
 
         if (!transcript) {
-          showSupportMessage("No speech was recognised. Please try again.");
+          showSupportMessage(t("noSpeechRecognised"));
           const displayText = isCustomParagraphId(paragraph.id)
             ? getCustomTextRaw(paragraph.id)
             : text;
@@ -2134,6 +2717,7 @@
       stopButton.addEventListener("click", stopListening);
 
       populateParagraphs();
+      applyStaticTranslations();
       updatePlayButtonState();
     </script>
   </body>

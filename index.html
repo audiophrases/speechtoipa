@@ -1404,6 +1404,9 @@
         entries.forEach((entry) => {
           const listItem = document.createElement("li");
           listItem.className = "history-card";
+          listItem.dataset.entryKey = entry.key;
+          listItem.tabIndex = 0;
+          listItem.setAttribute("role", "button");
 
           const header = document.createElement("div");
           header.className = "history-card__header";
@@ -3492,22 +3495,150 @@
         playWord(word);
       });
 
-      if (historyListEl) {
-        historyListEl.addEventListener("click", (event) => {
-          const button =
-            event.target instanceof Element
-              ? event.target.closest("button.history-remove")
-              : null;
-          if (!button) {
-            return;
+      function getPracticeHistoryEntry(key) {
+        if (!key) {
+          return null;
+        }
+        return practiceHistoryEntries.find((entry) => entry && entry.key === key);
+      }
+
+      function createAnalysisFromSummary(entry) {
+        if (!entry || typeof entry.text !== "string") {
+          return [];
+        }
+
+        const summaryWords = Array.isArray(entry.words) ? entry.words : [];
+        const tokenised = tokenise(entry.text);
+
+        return tokenised.map((_, idx) => {
+          const summary = summaryWords[idx] || null;
+          const correctness = summary?.correctness;
+          let normalised = "pending";
+          if (correctness === "correct") {
+            normalised = "correct";
+          } else if (correctness === "close") {
+            normalised = "close";
+          } else if (correctness === "incorrect") {
+            normalised = "incorrect";
           }
-          const key = button.dataset.entryKey;
-          if (!key) {
+
+          return {
+            correctness: normalised,
+            provisional: false,
+            slow: false,
+            repeated: false,
+            similarity: normalised === "correct" ? 1 : 0,
+          };
+        });
+      }
+
+      function determineParagraphSelection(entry) {
+        if (!entry) {
+          return CUSTOM_OPTION_ID;
+        }
+        const targetId = entry.paragraphId || CUSTOM_OPTION_ID;
+        const options = paragraphSelect ? Array.from(paragraphSelect.options) : [];
+        const hasOption = options.some((option) => option.value === targetId);
+        if (hasOption) {
+          return targetId;
+        }
+        return CUSTOM_OPTION_ID;
+      }
+
+      function loadPracticeHistoryEntry(entry) {
+        if (!entry || typeof entry.text !== "string") {
+          return;
+        }
+
+        const text = entry.text.trim();
+        if (!text) {
+          return;
+        }
+
+        const selectedId = determineParagraphSelection(entry);
+        if (paragraphSelect) {
+          paragraphSelect.value = selectedId;
+        }
+
+        activeParagraphId = selectedId;
+
+        if (isCustomParagraphId(selectedId) || selectedId === CUSTOM_OPTION_ID) {
+          setCustomText(selectedId, text);
+        }
+
+        const analysis = createAnalysisFromSummary(entry);
+        renderParagraph(text, analysis);
+        resultContainer.classList.remove("hidden");
+        transcriptEl.textContent = t("transcriptPlaceholder");
+        hideSupportMessage();
+      }
+
+      function handleHistoryListClick(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+          return;
+        }
+
+        const removeButton = target.closest("button.history-remove");
+        if (removeButton) {
+          const { entryKey } = removeButton.dataset;
+          if (!entryKey) {
             return;
           }
           event.preventDefault();
-          removePracticeHistoryEntry(key);
-        });
+          removePracticeHistoryEntry(entryKey);
+          return;
+        }
+
+        const card = target.closest(".history-card");
+        if (!card) {
+          return;
+        }
+
+        const entryKey = card.dataset.entryKey;
+        if (!entryKey) {
+          return;
+        }
+
+        const entry = getPracticeHistoryEntry(entryKey);
+        if (!entry) {
+          return;
+        }
+
+        event.preventDefault();
+        loadPracticeHistoryEntry(entry);
+      }
+
+      function handleHistoryListKeydown(event) {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+          return;
+        }
+
+        const card = target.closest(".history-card");
+        if (!card) {
+          return;
+        }
+
+        const entryKey = card.dataset.entryKey;
+        if (!entryKey) {
+          return;
+        }
+
+        event.preventDefault();
+        const entry = getPracticeHistoryEntry(entryKey);
+        if (!entry) {
+          return;
+        }
+        loadPracticeHistoryEntry(entry);
+      }
+
+      if (historyListEl) {
+        historyListEl.addEventListener("click", handleHistoryListClick);
+        historyListEl.addEventListener("keydown", handleHistoryListKeydown);
       }
 
       if (addCustomTextButton) {

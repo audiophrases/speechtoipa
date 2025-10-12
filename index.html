@@ -399,6 +399,144 @@
         color: var(--text);
       }
 
+      .history {
+        margin-top: 2.5rem;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .history-header h2 {
+        margin: 0;
+        font-size: clamp(1.4rem, 3vw, 1.75rem);
+        color: var(--accent);
+      }
+
+      .history-header p {
+        margin: 0.35rem 0 0;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+
+      .history-empty-message {
+        margin: 0;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+
+      .history-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .history-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 20px;
+        padding: 1.25rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .history-card__header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+
+      .history-card__title {
+        margin: 0;
+        font-size: 1.1rem;
+      }
+
+      .history-card__timestamp {
+        margin: 0.25rem 0 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      .history-card__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.5rem;
+        align-items: baseline;
+      }
+
+      .history-score {
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      .history-status {
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+
+      .history-status--perfect {
+        color: var(--success);
+      }
+
+      .history-status--needs-work {
+        color: var(--error);
+      }
+
+      .history-words {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .history-word {
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        background: rgba(148, 163, 184, 0.16);
+      }
+
+      .history-word--correct {
+        background: rgba(34, 197, 94, 0.22);
+        color: var(--success);
+      }
+
+      .history-word--close {
+        background: rgba(249, 115, 22, 0.22);
+        color: var(--close);
+      }
+
+      .history-word--incorrect {
+        background: rgba(239, 68, 68, 0.22);
+        color: var(--error);
+      }
+
+      .history-remove {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: var(--error);
+        border-radius: 999px;
+        padding: 0.35rem 0.9rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background 120ms ease, border 120ms ease;
+      }
+
+      .history-remove:hover,
+      .history-remove:focus-visible {
+        background: rgba(239, 68, 68, 0.2);
+        border-color: rgba(239, 68, 68, 0.55);
+        outline: none;
+      }
+
+      .history-remove:active {
+        transform: scale(0.97);
+      }
+
       .hidden {
         display: none !important;
       }
@@ -431,6 +569,19 @@
         button,
         textarea {
           width: 100%;
+        }
+
+        .history-card__header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .history-card__header .history-remove {
+          align-self: flex-start;
+        }
+
+        .history-words {
+          gap: 0.3rem;
         }
       }
     </style>
@@ -608,6 +759,22 @@
           <div class="transcript" id="transcript">—</div>
         </div>
       </section>
+      <section id="history" class="history" aria-live="polite">
+        <div class="history-header">
+          <h2 id="historyHeading">Practice history</h2>
+          <p id="historyHelper">
+            Your most recent attempt for each passage is stored on this device.
+          </p>
+        </div>
+        <p id="historyEmpty" class="history-empty-message">
+          No practice attempts saved yet.
+        </p>
+        <ul
+          id="historyList"
+          class="history-list"
+          aria-label="Saved practice results"
+        ></ul>
+      </section>
     </main>
 
     <script>
@@ -672,6 +839,11 @@
       const legendIncorrectEl = document.getElementById("legendIncorrect");
       const legendSlowEl = document.getElementById("legendSlow");
       const legendRepeatEl = document.getElementById("legendRepeat");
+      const historySection = document.getElementById("history");
+      const historyHeadingEl = document.getElementById("historyHeading");
+      const historyHelperEl = document.getElementById("historyHelper");
+      const historyEmptyEl = document.getElementById("historyEmpty");
+      const historyListEl = document.getElementById("historyList");
 
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -687,6 +859,7 @@
       const MATCH_LOOKAHEAD_LIMIT = 6;
       const CUSTOM_OPTION_ID = "custom";
       const ADVANCED_CONFIG_STORAGE_KEY = "speechtoipa:advanced-config";
+      const PRACTICE_HISTORY_STORAGE_KEY = "speechtoipa:practice-history";
 
       const defaultRecognitionLocale =
         navigator.language && typeof navigator.language === "string"
@@ -788,6 +961,21 @@
           recognitionOptionFr: "French (France)",
           recognitionOptionIt: "Italian (Italy)",
           recognitionOptionAr: "Arabic",
+          historyHeading: "Practice history",
+          historyHelper:
+            "Your most recent attempt for each passage is stored on this device.",
+          historyEmpty: "No practice attempts saved yet.",
+          historyListLabel: "Saved practice results",
+          historyPractisedOn: (datetime) => `Practised on ${datetime}`,
+          historySuccessRate: (percent) => `Success rate: ${percent}%`,
+          historyPerfect: "Completed with 100% accuracy.",
+          historyNeedsWork: "Needs more practice on the highlighted words.",
+          historyRemove: "Remove",
+          historyRemoveAria: (label) => `Remove saved result for ${label}`,
+          historyWordsLabel: "Pronunciation feedback by word",
+          historyWordCorrect: "Correct pronunciation",
+          historyWordClose: "Close pronunciation",
+          historyWordIncorrect: "Needs more practice",
         },
         ca: {
           documentTitle: "Pràctica de pronunciació",
@@ -886,6 +1074,22 @@
           recognitionOptionFr: "Francès (França)",
           recognitionOptionIt: "Italià (Itàlia)",
           recognitionOptionAr: "Àrab",
+          historyHeading: "Historial de pràctica",
+          historyHelper:
+            "L'últim intent de cada fragment es desa en aquest dispositiu.",
+          historyEmpty: "Encara no hi ha intents desats.",
+          historyListLabel: "Resultats de pràctica desats",
+          historyPractisedOn: (datetime) => `Practicat el ${datetime}`,
+          historySuccessRate: (percent) =>
+            `Percentatge d'encert: ${percent}%`,
+          historyPerfect: "Completat amb una precisió del 100%.",
+          historyNeedsWork: "Cal seguir practicant les paraules ressaltades.",
+          historyRemove: "Elimina",
+          historyRemoveAria: (label) => `Elimina el resultat desat per ${label}`,
+          historyWordsLabel: "Retorn de pronunciació per paraula",
+          historyWordCorrect: "Pronunciació correcta",
+          historyWordClose: "Pronunciació aproximada",
+          historyWordIncorrect: "Cal més pràctica",
         },
       };
 
@@ -935,6 +1139,356 @@
           return value(arg);
         }
         return value;
+      }
+
+      function loadPracticeHistory() {
+        if (typeof localStorage === "undefined") {
+          return [];
+        }
+        try {
+          const raw = localStorage.getItem(PRACTICE_HISTORY_STORAGE_KEY);
+          if (!raw) {
+            return [];
+          }
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) {
+            return [];
+          }
+          return parsed
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              if (!entry.key || typeof entry.key !== "string") {
+                return null;
+              }
+              const words = Array.isArray(entry.words)
+                ? entry.words
+                    .map((word) => {
+                      if (!word || typeof word !== "object") return null;
+                      const text = typeof word.text === "string" ? word.text : "";
+                      if (!text) return null;
+                      const correctness =
+                        word.correctness === "correct" ||
+                        word.correctness === "close" ||
+                        word.correctness === "incorrect"
+                          ? word.correctness
+                          : "incorrect";
+                      return { text, correctness };
+                    })
+                    .filter(Boolean)
+                : [];
+              const timestamp =
+                typeof entry.timestamp === "string"
+                  ? entry.timestamp
+                  : new Date().toISOString();
+              const successRate =
+                typeof entry.successRate === "number" && Number.isFinite(entry.successRate)
+                  ? Math.max(0, Math.min(100, Math.round(entry.successRate)))
+                  : 0;
+              return {
+                key: entry.key,
+                paragraphId:
+                  typeof entry.paragraphId === "string" ? entry.paragraphId : "",
+                label: typeof entry.label === "string" ? entry.label : "",
+                preview: typeof entry.preview === "string" ? entry.preview : "",
+                text: typeof entry.text === "string" ? entry.text : "",
+                timestamp,
+                successRate,
+                words,
+              };
+            })
+            .filter(Boolean);
+        } catch (error) {
+          console.warn("Failed to read practice history", error);
+          return [];
+        }
+      }
+
+      function persistPracticeHistory(entries) {
+        if (typeof localStorage === "undefined") {
+          return;
+        }
+        try {
+          localStorage.setItem(
+            PRACTICE_HISTORY_STORAGE_KEY,
+            JSON.stringify(entries),
+          );
+        } catch (error) {
+          console.warn("Failed to persist practice history", error);
+        }
+      }
+
+      function normalisePracticeText(text) {
+        return (text || "").replace(/\s+/g, " ").trim();
+      }
+
+      function generatePracticeKey(text) {
+        let normalised = normalisePracticeText(text).toLowerCase();
+        try {
+          normalised = normalised.normalize("NFKD");
+        } catch (error) {
+          // Ignore normalisation errors on environments without full Intl support
+        }
+        if (!normalised) {
+          return "";
+        }
+        let hash = 0;
+        for (let i = 0; i < normalised.length; i += 1) {
+          hash = (hash * 31 + normalised.charCodeAt(i)) >>> 0;
+        }
+        return `text-${normalised.length}-${hash.toString(16)}`;
+      }
+
+      let practiceHistoryEntries = loadPracticeHistory();
+      practiceHistoryEntries.sort((a, b) => {
+        const aTime = Date.parse(a?.timestamp || "") || 0;
+        const bTime = Date.parse(b?.timestamp || "") || 0;
+        return bTime - aTime;
+      });
+
+      function createPracticeSummary(paragraph, tokens, analysis) {
+        if (!paragraph) {
+          return null;
+        }
+        const textSource = typeof paragraph.text === "string" ? paragraph.text : "";
+        const key = generatePracticeKey(textSource);
+        if (!key) {
+          return null;
+        }
+        if (!Array.isArray(tokens) || !tokens.length) {
+          return null;
+        }
+        const words = tokens
+          .map((token, idx) => {
+            if (!token || typeof token !== "object") {
+              return null;
+            }
+            const original =
+              typeof token.original === "string" && token.original
+                ? token.original
+                : typeof token.cleaned === "string"
+                ? token.cleaned
+                : "";
+            if (!original) {
+              return null;
+            }
+            const status = analysis[idx] || createEmptyStatus();
+            let correctness = status.correctness;
+            if (correctness === "correct") {
+              correctness = "correct";
+            } else if (correctness === "close") {
+              correctness = "close";
+            } else {
+              correctness = "incorrect";
+            }
+            return { text: original, correctness };
+          })
+          .filter(Boolean);
+
+        if (!words.length) {
+          return null;
+        }
+
+        const totalWords = words.length;
+        const correctWords = words.filter((word) => word.correctness === "correct").length;
+        const successRate = totalWords
+          ? Math.round((correctWords / totalWords) * 100)
+          : 0;
+
+        const normalisedText = normalisePracticeText(textSource);
+        const previewText =
+          normalisedText.length > 160
+            ? `${normalisedText.slice(0, 160)}…`
+            : normalisedText;
+        const labelSource =
+          typeof paragraph.label === "string" && paragraph.label.trim()
+            ? paragraph.label
+            : "";
+
+        return {
+          key,
+          paragraphId: typeof paragraph.id === "string" ? paragraph.id : "",
+          label: labelSource || previewText || normalisedText || t("customDefaultLabel"),
+          preview: previewText,
+          text: textSource,
+          timestamp: new Date().toISOString(),
+          successRate: Math.max(0, Math.min(100, successRate)),
+          words,
+        };
+      }
+
+      function upsertPracticeHistoryEntry(entry) {
+        if (!entry || !entry.key) {
+          return;
+        }
+        const existing = practiceHistoryEntries.filter(
+          (item) => item && item.key !== entry.key,
+        );
+        practiceHistoryEntries = [entry, ...existing].sort((a, b) => {
+          const aTime = Date.parse(a.timestamp || "") || 0;
+          const bTime = Date.parse(b.timestamp || "") || 0;
+          return bTime - aTime;
+        });
+        persistPracticeHistory(practiceHistoryEntries);
+        renderPracticeHistory();
+      }
+
+      function removePracticeHistoryEntry(key) {
+        if (!key) {
+          return;
+        }
+        practiceHistoryEntries = practiceHistoryEntries.filter(
+          (entry) => entry && entry.key !== key,
+        );
+        persistPracticeHistory(practiceHistoryEntries);
+        renderPracticeHistory();
+      }
+
+      function formatHistoryTimestamp(timestamp) {
+        if (!timestamp) {
+          return "";
+        }
+        try {
+          const date = new Date(timestamp);
+          if (Number.isNaN(date.getTime())) {
+            return "";
+          }
+          const locale = uiLanguage === "ca" ? "ca-ES" : "en-US";
+          return new Intl.DateTimeFormat(locale, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(date);
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function getHistoryStatusDescription(status) {
+        if (status === "correct") {
+          return t("historyWordCorrect");
+        }
+        if (status === "close") {
+          return t("historyWordClose");
+        }
+        return t("historyWordIncorrect");
+      }
+
+      function renderPracticeHistory() {
+        if (!historyListEl || !historyEmptyEl) {
+          return;
+        }
+
+        historyListEl.innerHTML = "";
+        const listLabel = t("historyListLabel");
+        if (listLabel && historyListEl) {
+          historyListEl.setAttribute("aria-label", listLabel);
+        }
+
+        if (!practiceHistoryEntries.length) {
+          historyEmptyEl.textContent = t("historyEmpty");
+          historyEmptyEl.classList.remove("hidden");
+          return;
+        }
+
+        historyEmptyEl.classList.add("hidden");
+
+        const entries = practiceHistoryEntries
+          .slice()
+          .sort((a, b) => {
+            const aTime = Date.parse(a.timestamp || "") || 0;
+            const bTime = Date.parse(b.timestamp || "") || 0;
+            return bTime - aTime;
+          });
+
+        entries.forEach((entry) => {
+          const listItem = document.createElement("li");
+          listItem.className = "history-card";
+
+          const header = document.createElement("div");
+          header.className = "history-card__header";
+
+          const titleWrapper = document.createElement("div");
+          const title = document.createElement("h3");
+          title.className = "history-card__title";
+          title.textContent = entry.label || entry.preview || t("customDefaultLabel");
+          titleWrapper.append(title);
+
+          const timestampText = formatHistoryTimestamp(entry.timestamp);
+          if (timestampText) {
+            const timestampEl = document.createElement("p");
+            timestampEl.className = "history-card__timestamp";
+            timestampEl.textContent = t("historyPractisedOn", timestampText);
+            titleWrapper.append(timestampEl);
+          }
+
+          header.append(titleWrapper);
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "history-remove";
+          removeButton.dataset.entryKey = entry.key;
+          removeButton.textContent = t("historyRemove");
+          const ariaTarget = entry.label || entry.preview || t("customDefaultLabel");
+          removeButton.setAttribute("aria-label", t("historyRemoveAria", ariaTarget));
+          header.append(removeButton);
+
+          listItem.append(header);
+
+          const meta = document.createElement("div");
+          meta.className = "history-card__meta";
+
+          const score = document.createElement("span");
+          score.className = "history-score";
+          score.textContent = t("historySuccessRate", entry.successRate);
+          meta.append(score);
+
+          const statusEl = document.createElement("span");
+          const statusKey = entry.successRate === 100 ? "perfect" : "needs-work";
+          statusEl.className = `history-status history-status--${statusKey}`;
+          statusEl.textContent =
+            entry.successRate === 100 ? t("historyPerfect") : t("historyNeedsWork");
+          meta.append(statusEl);
+
+          listItem.append(meta);
+
+          const words = Array.isArray(entry.words) ? entry.words : [];
+          if (words.length) {
+            const wordList = document.createElement("ul");
+            wordList.className = "history-words";
+            wordList.setAttribute("aria-label", t("historyWordsLabel"));
+            words.forEach((word) => {
+              if (!word || typeof word !== "object") {
+                return;
+              }
+              const statusClass =
+                word.correctness === "correct"
+                  ? "correct"
+                  : word.correctness === "close"
+                  ? "close"
+                  : "incorrect";
+              const item = document.createElement("li");
+              item.className = `history-word history-word--${statusClass}`;
+              item.textContent = word.text;
+              item.setAttribute(
+                "aria-label",
+                `${word.text} – ${getHistoryStatusDescription(statusClass)}`,
+              );
+              wordList.append(item);
+            });
+            listItem.append(wordList);
+          }
+
+          historyListEl.append(listItem);
+        });
+      }
+
+      function recordPracticeHistory(paragraph, tokens, analysis) {
+        const summary = createPracticeSummary(paragraph, tokens, analysis);
+        if (!summary) {
+          return;
+        }
+        upsertPracticeHistoryEntry(summary);
       }
 
       function createCustomEntry(id, type = "base", order = 1) {
@@ -1101,6 +1655,23 @@
         }
         applyRecognitionLanguageLabels();
         updateAdvancedToggleText();
+
+        if (historyHeadingEl) {
+          historyHeadingEl.textContent = t("historyHeading");
+        }
+        if (historyHelperEl) {
+          historyHelperEl.textContent = t("historyHelper");
+        }
+        if (historyEmptyEl) {
+          historyEmptyEl.textContent = t("historyEmpty");
+        }
+        if (historyListEl) {
+          const listLabel = t("historyListLabel");
+          if (listLabel) {
+            historyListEl.setAttribute("aria-label", listLabel);
+          }
+        }
+        renderPracticeHistory();
 
         if (customTextInput) {
           if (customTextInput.classList.contains("interactive")) {
@@ -2120,6 +2691,7 @@
         const targetTokens = tokenise(paragraph.text);
         recognitionState = {
           paragraphId: paragraph.id,
+          paragraphLabel: paragraph.label || "",
           targetText: paragraph.text,
           targetTokens,
           lockedAnalysis: targetTokens.map(() => null),
@@ -2316,6 +2888,38 @@
         resultContainer.classList.remove("hidden");
       }
 
+      function finaliseRecognitionAttempt() {
+        if (!recognitionState) {
+          return;
+        }
+        const {
+          paragraphId,
+          paragraphLabel,
+          targetText,
+          targetTokens,
+          confirmedTokens: storedTokens,
+          confirmedMeta,
+        } = recognitionState;
+        if (!Array.isArray(targetTokens) || !targetTokens.length) {
+          return;
+        }
+        const confirmedTokens = Array.isArray(storedTokens)
+          ? storedTokens.slice()
+          : [];
+        const paragraph = {
+          id: paragraphId || CUSTOM_OPTION_ID,
+          label: paragraphLabel || "",
+          text: targetText || "",
+        };
+        const analysis = evaluatePronunciation(targetTokens, confirmedTokens, {
+          confirmedCount: confirmedTokens.length,
+          metadata: Array.isArray(confirmedMeta) ? confirmedMeta : [],
+          isComplete: true,
+        });
+        const mergedAnalysis = mergeAnalysisWithLocks(analysis);
+        recordPracticeHistory(paragraph, targetTokens, mergedAnalysis);
+      }
+
       function startSpeechRecognition() {
         try {
           recognition = new SpeechRecognition();
@@ -2356,6 +2960,7 @@
               stopButton.disabled = true;
             }
           } else {
+            finaliseRecognitionAttempt();
             startButton.disabled = false;
             stopButton.disabled = true;
             recognition = null;
@@ -2631,6 +3236,7 @@
           recognitionState && recognitionState.targetText
             ? {
                 id: recognitionState.paragraphId || activeParagraphId || CUSTOM_OPTION_ID,
+                label: recognitionState.paragraphLabel || "",
                 text: recognitionState.targetText,
               }
             : getSelectedParagraph();
@@ -2647,7 +3253,10 @@
 
         prepareParagraphSession(paragraph, { showTranscript: true });
         hideSupportMessage();
-        const targetTokens = recognitionState.targetTokens;
+        const targetTokens =
+          recognitionState && Array.isArray(recognitionState.targetTokens)
+            ? recognitionState.targetTokens
+            : tokenise(text);
         const spokenTokens = normaliseTranscript(transcript);
         const analysis = evaluatePronunciation(targetTokens, spokenTokens, {
           confirmedCount: spokenTokens.length,
@@ -2665,6 +3274,7 @@
             ? transcript
             : alignedTranscript;
         resultContainer.classList.remove("hidden");
+        recordPracticeHistory(paragraph, targetTokens, mergedAnalysis);
       }
 
       paragraphSelect.addEventListener("change", () => {
@@ -2702,6 +3312,24 @@
         event.preventDefault();
         playWord(word);
       });
+
+      if (historyListEl) {
+        historyListEl.addEventListener("click", (event) => {
+          const button =
+            event.target instanceof Element
+              ? event.target.closest("button.history-remove")
+              : null;
+          if (!button) {
+            return;
+          }
+          const key = button.dataset.entryKey;
+          if (!key) {
+            return;
+          }
+          event.preventDefault();
+          removePracticeHistoryEntry(key);
+        });
+      }
 
       if (addCustomTextButton) {
         addCustomTextButton.addEventListener("click", addAnotherCustomEntry);

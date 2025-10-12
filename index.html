@@ -1893,8 +1893,15 @@
 
       if (recognitionLanguageSelect) {
         recognitionLanguageSelect.addEventListener("change", () => {
+          const previousLanguage = advancedConfig?.language || "";
           updateRecognitionLanguageConfig();
           persistAdvancedConfig(advancedConfig);
+          const nextLanguage = advancedConfig?.language || "";
+          if (previousLanguage !== nextLanguage) {
+            handlePracticeLanguageChange();
+          } else {
+            rebuildParagraphOptions(paragraphSelect.value);
+          }
         });
       }
 
@@ -2003,91 +2010,230 @@
       const customTexts = new Map([[CUSTOM_OPTION_ID, ""]]);
       let customEntryCount = 1;
 
-      const TONGUE_TWISTERS = [
-        {
-          id: "seashells",
-          label: "She sells seashells",
-          text:
-            "She sells seashells by the seashore; the shells she sells are surely seashells.",
-        },
-        {
-          id: "peter-piper",
-          label: "Peter Piper",
-          text:
-            "Peter Piper picked a peck of pickled peppers; a peck of pickled peppers Peter Piper picked.",
-        },
-        {
-          id: "clam-can",
-          label: "Clean cream can",
-          text: "How can a clam cram in a clean cream can?",
-        },
-        {
-          id: "susie-shoeshine",
-          label: "Susie in a shoeshine shop",
-          text: "I saw Susie sitting in a shoeshine shop.",
-        },
-        {
-          id: "pad-kid",
-          label: "Pad kid poured",
-          text: "Pad kid poured curd pulled cod.",
-        },
-        {
-          id: "fred-ted",
-          label: "Fred fed Ted",
-          text: "Fred fed Ted bread and Ted fed Fred bread.",
-        },
-        {
-          id: "black-bug",
-          label: "Big black bug",
-          text: "A big black bug bit a big black bear.",
-        },
-        {
-          id: "unique-new-york",
-          label: "Unique New York",
-          text:
-            "Unique New York, unique New York, you know you need unique New York.",
-        },
-        {
-          id: "sleek-swans",
-          label: "Six sleek swans",
-          text: "Six sleek swans swam swiftly southwards.",
-        },
-        {
-          id: "irish-wristwatch",
-          label: "Irish wristwatch",
-          text: "Irish wristwatch, Swiss wristwatch.",
-        },
-        {
-          id: "lorry",
-          label: "Red lorry, yellow lorry",
-          text: "Red lorry, yellow lorry, red lorry, yellow lorry.",
-        },
-        {
-          id: "toy-boat",
-          label: "Toy boat",
-          text: "Toy boat, toy boat, toy boat, toy boat, toy boat.",
-        },
-        {
-          id: "fuzzy-wuzzy",
-          label: "Fuzzy Wuzzy",
-          text: "Fuzzy Wuzzy was a bear; Fuzzy Wuzzy had no hair.",
-        },
-        {
-          id: "proper-copper",
-          label: "Proper copper coffee pot",
-          text: "A proper copper coffee pot.",
-        },
-        {
-          id: "woodchuck",
-          label: "Woodchuck",
-          text: "How much wood would a woodchuck chuck if a woodchuck could chuck wood?",
-        },
-        {
-          id: "thirty-three",
-          label: "Thirty-three thousand",
-          text: "Thirty-three thousand feathers on a thrush's throat.",
-        },
-      ];
+      const PRESET_PARAGRAPHS = {
+        en: [
+          {
+            id: "seashells",
+            label: "She sells seashells",
+            text:
+              "She sells seashells by the seashore; the shells she sells are surely seashells.",
+          },
+          {
+            id: "peter-piper",
+            label: "Peter Piper",
+            text:
+              "Peter Piper picked a peck of pickled peppers; a peck of pickled peppers Peter Piper picked.",
+          },
+          {
+            id: "clam-can",
+            label: "Clean cream can",
+            text: "How can a clam cram in a clean cream can?",
+          },
+          {
+            id: "susie-shoeshine",
+            label: "Susie in a shoeshine shop",
+            text: "I saw Susie sitting in a shoeshine shop.",
+          },
+          {
+            id: "pad-kid",
+            label: "Pad kid poured",
+            text: "Pad kid poured curd pulled cod.",
+          },
+          {
+            id: "fred-ted",
+            label: "Fred fed Ted",
+            text: "Fred fed Ted bread and Ted fed Fred bread.",
+          },
+          {
+            id: "black-bug",
+            label: "Big black bug",
+            text: "A big black bug bit a big black bear.",
+          },
+          {
+            id: "unique-new-york",
+            label: "Unique New York",
+            text:
+              "Unique New York, unique New York, you know you need unique New York.",
+          },
+          {
+            id: "sleek-swans",
+            label: "Six sleek swans",
+            text: "Six sleek swans swam swiftly southwards.",
+          },
+          {
+            id: "irish-wristwatch",
+            label: "Irish wristwatch",
+            text: "Irish wristwatch, Swiss wristwatch.",
+          },
+          {
+            id: "lorry",
+            label: "Red lorry, yellow lorry",
+            text: "Red lorry, yellow lorry, red lorry, yellow lorry.",
+          },
+          {
+            id: "toy-boat",
+            label: "Toy boat",
+            text: "Toy boat, toy boat, toy boat, toy boat, toy boat.",
+          },
+          {
+            id: "fuzzy-wuzzy",
+            label: "Fuzzy Wuzzy",
+            text: "Fuzzy Wuzzy was a bear; Fuzzy Wuzzy had no hair.",
+          },
+          {
+            id: "proper-copper",
+            label: "Proper copper coffee pot",
+            text: "A proper copper coffee pot.",
+          },
+          {
+            id: "woodchuck",
+            label: "Woodchuck",
+            text: "How much wood would a woodchuck chuck if a woodchuck could chuck wood?",
+          },
+          {
+            id: "thirty-three",
+            label: "Thirty-three thousand",
+            text: "Thirty-three thousand feathers on a thrush's throat.",
+          },
+        ],
+        ca: [
+          {
+            id: "ca-setze-jutges",
+            label: "Setze jutges",
+            text: "Setze jutges d'un jutjat mengen fetge d'un penjat.",
+          },
+          {
+            id: "ca-plou-poc",
+            label: "Plou poc però prou",
+            text: "Plou poc però pel poc que plou plou prou.",
+          },
+          {
+            id: "ca-reina-riu",
+            label: "La reina que riu",
+            text: "La reina de les reines riu i fa riure als súbdits.",
+          },
+          {
+            id: "ca-xai-xines",
+            label: "El xai xinès",
+            text: "El xai xinès és xinès i no pas de Xàtiva.",
+          },
+          {
+            id: "ca-bruixes",
+            label: "Vuit bruixes",
+            text: "Vuit bruixes bruixetes bruixegen bruixeries.",
+          },
+        ],
+        fr: [
+          {
+            id: "fr-chasseur",
+            label: "Chasseur sans chien",
+            text: "Un chasseur sachant chasser sans son chien est un bon chasseur.",
+          },
+          {
+            id: "fr-archiduchesse",
+            label: "Chaussettes de l'archiduchesse",
+            text: "Les chaussettes de l'archiduchesse sont-elles sèches ? Archi-sèches.",
+          },
+          {
+            id: "fr-six-scies",
+            label: "Six scies scient",
+            text: "Si six scies scient six cyprès, six cents scies scient six cents cyprès.",
+          },
+          {
+            id: "fr-jasmin",
+            label: "Je veux du jasmin",
+            text: "Je veux et j'exige du jasmin et des jonquilles dans mon jardin.",
+          },
+          {
+            id: "fr-dragon",
+            label: "Dragon gradé",
+            text: "Un dragon gradé dégrade un dragon dégradé.",
+          },
+        ],
+        it: [
+          {
+            id: "it-trentini",
+            label: "Trentatré trentini",
+            text: "Trentatré trentini entrarono a Trento tutti e trentatré trotterellando.",
+          },
+          {
+            id: "it-apelle",
+            label: "Apelle figlio di Apollo",
+            text: "Apelle figlio di Apollo fece una palla di pelle di pollo.",
+          },
+          {
+            id: "it-capra-panca",
+            label: "Capra e panca",
+            text: "Sopra la panca la capra campa, sotto la panca la capra crepa.",
+          },
+          {
+            id: "it-arcivescovo",
+            label: "Arcivescovo di Costantinopoli",
+            text: "Se l'arcivescovo di Costantinopoli si disarcivescoviscostantinopolizzasse, vi disarcivescoviscostantinopolizzereste voi?",
+          },
+          {
+            id: "it-tre-tigri",
+            label: "Tre tigri",
+            text: "Tre tigri contro tre tigri.",
+          },
+        ],
+        ar: [
+          {
+            id: "ar-khams-khubzat",
+            label: "خمس خبزات",
+            text: "خمس خبزات خَبَزْنَ في فرن خباز.",
+          },
+          {
+            id: "ar-sharh",
+            label: "شر شارح",
+            text: "شر شارح شرح شرحًا غير مشروح.",
+          },
+          {
+            id: "ar-batatuna",
+            label: "بطتنا بطت",
+            text: "بطتنا بطت بطتكم، بطتكم بطت بطتنا.",
+          },
+          {
+            id: "ar-tabaq",
+            label: "طبق طبقنا",
+            text: "طبق طبقنا طبقا لا يطبق.",
+          },
+          {
+            id: "ar-sara",
+            label: "سر سارا",
+            text: "سر سارا أسرع من سر سارة.",
+          },
+        ],
+      };
+
+      function getPracticeLanguage() {
+        const configuredLanguage =
+          typeof advancedConfig?.language === "string" && advancedConfig.language
+            ? advancedConfig.language
+            : "";
+        if (configuredLanguage) {
+          return configuredLanguage;
+        }
+
+        if (recognitionLanguageSelect) {
+          const selectedOption = recognitionLanguageSelect.selectedOptions?.[0];
+          const optionLanguage = selectedOption?.dataset?.transcribe;
+          if (optionLanguage) {
+            return optionLanguage;
+          }
+          const fallbackValue = recognitionLanguageSelect.value || "";
+          if (fallbackValue) {
+            return fallbackValue.split("-")[0];
+          }
+        }
+
+        return defaultTranscriptionLanguage || "en";
+      }
+
+      function getPresetParagraphs() {
+        const practiceLanguage = getPracticeLanguage();
+        return PRESET_PARAGRAPHS[practiceLanguage] || PRESET_PARAGRAPHS.en;
+      }
 
       let isListening = false;
       let isProcessing = false;
@@ -2104,6 +2250,7 @@
       const API_ENDPOINT = "/api/transcribe";
 
       function rebuildParagraphOptions(selectedId = CUSTOM_OPTION_ID) {
+        const presetParagraphs = getPresetParagraphs();
         paragraphSelect.innerHTML = "";
         customEntries.forEach((entry) => {
           const option = document.createElement("option");
@@ -2112,15 +2259,23 @@
           paragraphSelect.append(option);
         });
 
-        TONGUE_TWISTERS.forEach((entry) => {
+        presetParagraphs.forEach((entry) => {
           const option = document.createElement("option");
           option.value = entry.id;
           option.textContent = entry.label;
           paragraphSelect.append(option);
         });
 
+        let nextSelectedId = selectedId;
+        if (
+          !isCustomParagraphId(nextSelectedId) &&
+          !presetParagraphs.some((entry) => entry.id === nextSelectedId)
+        ) {
+          nextSelectedId = presetParagraphs[0]?.id || CUSTOM_OPTION_ID;
+        }
+
         const matchingOption = Array.from(paragraphSelect.options).find(
-          (option) => option.value === selectedId
+          (option) => option.value === nextSelectedId
         );
         if (matchingOption) {
           matchingOption.selected = true;
@@ -2135,6 +2290,22 @@
         renderParagraph("");
         resetResultDisplay();
         hideSupportMessage();
+      }
+
+      function handlePracticeLanguageChange() {
+        const currentSelection = paragraphSelect?.value || CUSTOM_OPTION_ID;
+        const presetParagraphs = getPresetParagraphs();
+        let nextSelection = currentSelection;
+        if (
+          !isCustomParagraphId(currentSelection) &&
+          !presetParagraphs.some((entry) => entry.id === currentSelection)
+        ) {
+          nextSelection = presetParagraphs[0]?.id || CUSTOM_OPTION_ID;
+        }
+        rebuildParagraphOptions(nextSelection);
+        displaySelectedParagraph();
+        hideSupportMessage();
+        resetResultDisplay();
       }
 
       function setCustomInputMode(customEntry) {
@@ -2390,7 +2561,8 @@
           };
         }
 
-        const chosen = TONGUE_TWISTERS.find((p) => p.id === selectedId);
+        const presetParagraphs = getPresetParagraphs();
+        const chosen = presetParagraphs.find((p) => p.id === selectedId);
         if (chosen) return chosen;
 
         return {

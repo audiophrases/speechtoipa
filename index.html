@@ -3023,11 +3023,18 @@
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
 
-        if (
-          confirmedTokens.length >= targetTokens.length &&
-          recognition &&
-          shouldRestartRecognition
-        ) {
+        const hasSpokenAllTargets =
+          confirmedTokens.length >= targetTokens.length && targetTokens.length > 0;
+        const analysisSlice = hasSpokenAllTargets
+          ? analysis.slice(0, targetTokens.length)
+          : [];
+        const completedSuccessfully =
+          hasSpokenAllTargets &&
+          analysisSlice.every(
+            (status) => status && status.correctness === "correct"
+          );
+
+        if (completedSuccessfully && recognition && shouldRestartRecognition) {
           shouldRestartRecognition = false;
           isListening = false;
           stopButton.disabled = true;

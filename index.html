@@ -845,9 +845,21 @@
       const historyEmptyEl = document.getElementById("historyEmpty");
       const historyListEl = document.getElementById("historyList");
 
-      const SpeechRecognition =
+      const SpeechRecognitionConstructor =
         window.SpeechRecognition || window.webkitSpeechRecognition || null;
-      const supportsSpeechRecognition = typeof SpeechRecognition === "function";
+      const isWebkitSpeechRecognition =
+        typeof window !== "undefined" &&
+        typeof window.webkitSpeechRecognition === "function" &&
+        SpeechRecognitionConstructor === window.webkitSpeechRecognition;
+      const isLikelyTouchDevice =
+        typeof navigator !== "undefined" &&
+        (Number(navigator.maxTouchPoints || 0) > 0 ||
+          /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || ""));
+      const supportsSpeechRecognition =
+        typeof SpeechRecognitionConstructor === "function";
+      const supportsReliableSpeechRecognition =
+        supportsSpeechRecognition &&
+        !(isWebkitSpeechRecognition && isLikelyTouchDevice);
       const supportsSpeechSynthesis =
         typeof window !== "undefined" &&
         "speechSynthesis" in window &&
@@ -934,6 +946,8 @@
           speechRecognitionIssue: "Speech recognition encountered an issue.",
           speechRecognitionStartError:
             "Speech recognition could not be started.",
+          serverTranscriptionFallback:
+            "Using server transcription because on-device speech recognition is limited here.",
           mediaRecorderUnsupported:
             "MediaRecorder is not supported in this browser. Try a modern Chromium-based browser.",
           microphoneUnavailable: "Unable to access the microphone.",
@@ -1044,6 +1058,8 @@
             "Hi ha hagut un problema amb el reconeixement de veu.",
           speechRecognitionStartError:
             "No s'ha pogut iniciar el reconeixement de veu.",
+          serverTranscriptionFallback:
+            "Fem servir la transcripció al servidor perquè el reconeixement de veu del navegador és limitat en aquest dispositiu.",
           mediaRecorderUnsupported:
             "El MediaRecorder no és compatible amb aquest navegador. Prova amb un navegador modern basat en Chromium.",
           microphoneUnavailable: "No s'ha pogut accedir al micròfon.",
@@ -3026,29 +3042,6 @@
         const mergedAnalysis = mergeAnalysisWithLocks(analysis);
         renderParagraph(targetText, mergedAnalysis);
 
-        const hasSpokenAllTargets =
-          confirmedTokens.length >= targetTokens.length && targetTokens.length > 0;
-        const analysisSlice = hasSpokenAllTargets
-          ? analysis.slice(0, targetTokens.length)
-          : [];
-        const completedSuccessfully =
-          hasSpokenAllTargets &&
-          analysisSlice.every(
-            (status) => status && status.correctness === "correct"
-          );
-
-        if (completedSuccessfully && recognition && shouldRestartRecognition) {
-          shouldRestartRecognition = false;
-          isListening = false;
-          stopButton.disabled = true;
-          toggleListening(false);
-          try {
-            recognition.stop();
-          } catch (error) {
-            console.error(error);
-          }
-        }
-
         const confirmedTranscript = confirmedTokens.join(" ");
         const trimmedInterimTranscript = trimmedInterimTokens.join(" ");
         const fallbackTranscript = [
@@ -3103,8 +3096,15 @@
       }
 
       function startSpeechRecognition() {
+        if (
+          !supportsReliableSpeechRecognition ||
+          typeof SpeechRecognitionConstructor !== "function"
+        ) {
+          return false;
+        }
+
         try {
-          recognition = new SpeechRecognition();
+          recognition = new SpeechRecognitionConstructor();
         } catch (error) {
           console.error(error);
           showSupportMessage(t("recognitionUnavailable"));
@@ -3247,15 +3247,27 @@
           return;
         }
 
-        if (supportsSpeechRecognition) {
+        if (supportsReliableSpeechRecognition) {
           prepareParagraphSession(selectedParagraph, { showTranscript: true });
           const started = startSpeechRecognition();
           if (!started) {
             prepareParagraphSession(selectedParagraph, { showTranscript: false });
+            const fallbackMessage = t("serverTranscriptionFallback");
+            const existingMessage =
+              supportMessage && typeof supportMessage.textContent === "string"
+                ? supportMessage.textContent.trim()
+                : "";
+            showSupportMessage(
+              existingMessage
+                ? `${existingMessage} ${fallbackMessage}`
+                : fallbackMessage,
+            );
             await startMediaRecorderSession(selectedParagraph);
           }
         } else {
           prepareParagraphSession(selectedParagraph, { showTranscript: false });
+          const fallbackMessage = t("serverTranscriptionFallback");
+          showSupportMessage(fallbackMessage);
           await startMediaRecorderSession(selectedParagraph);
         }
       }

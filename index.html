@@ -71,10 +71,6 @@
         justify-content: space-between;
       }
 
-      .language-toggle-label {
-        font-weight: 600;
-      }
-
       .language-toggle {
         display: inline-flex;
         background: rgba(148, 163, 184, 0.12);
@@ -116,6 +112,18 @@
       .control-row.stack {
         flex-direction: column;
         align-items: stretch;
+      }
+
+      .practice-selects {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .practice-selects select {
+        flex: 1;
+        min-width: 200px;
       }
 
       select,
@@ -583,6 +591,11 @@
         .history-words {
           gap: 0.3rem;
         }
+
+        .practice-selects {
+          flex-direction: column;
+          align-items: stretch;
+        }
       }
     </style>
   </head>
@@ -595,32 +608,40 @@
           role="group"
           aria-label="Interface language"
         >
-          <span id="interfaceLanguageLabel" class="language-toggle-label"
-            >Interface language</span
-          >
           <div class="language-toggle">
             <button
               type="button"
               class="language-button active"
               data-language="en"
             >
-              English
+              EN
             </button>
             <button
               type="button"
               class="language-button"
               data-language="ca"
             >
-              Català
+              CA
             </button>
           </div>
         </div>
-        <div class="control-row">
-          <label id="paragraphLabel" for="paragraph">Paragraph</label>
-          <select id="paragraph"></select>
-        </div>
         <div class="control-row stack" id="customTextRow">
-          <label id="customTextLabel" for="customText">Your practice text</label>
+          <label id="practiceLabel" for="recognitionLanguage">Practice</label>
+          <div class="practice-selects">
+            <select id="recognitionLanguage">
+              <option value="en-US" data-transcribe="en">
+                English
+              </option>
+              <option value="ca-ES" data-transcribe="ca">Catalan</option>
+              <option value="fr-FR" data-transcribe="fr">French</option>
+              <option value="it-IT" data-transcribe="it">Italian</option>
+              <option value="ar-SA" data-transcribe="ar">Arabic</option>
+            </select>
+            <select
+              id="paragraph"
+              aria-labelledby="practiceLabel"
+            ></select>
+          </div>
           <div class="text-input-wrapper">
             <div
               id="customText"
@@ -630,6 +651,7 @@
               role="textbox"
               aria-live="polite"
               aria-multiline="true"
+              aria-label="Practice text"
             ></div>
             <div
               id="legendCard"
@@ -663,30 +685,13 @@
               </ul>
             </div>
           </div>
-          <p id="customTextHelper" class="helper-text">
-            This text is used whenever the current custom option is selected.
-            Click “Add another custom text” to create more slots.
-          </p>
+          <p id="customTextHelper" class="helper-text"></p>
           <button id="addCustomText" type="button" class="add-custom-button">
             ➕ Add another custom text
           </button>
         </div>
         <div class="control-row">
-          <label id="languageSelectLabel" for="recognitionLanguage"
-            >Language</label
-          >
-          <select id="recognitionLanguage">
-            <option value="en-US" data-transcribe="en">
-              English (United States)
-            </option>
-            <option value="ca-ES" data-transcribe="ca">Catalan (Catalonia)</option>
-            <option value="fr-FR" data-transcribe="fr">French (France)</option>
-            <option value="it-IT" data-transcribe="it">Italian (Italy)</option>
-            <option value="ar-SA" data-transcribe="ar">Arabic</option>
-          </select>
-        </div>
-        <div class="control-row">
-          <button id="playText" type="button">▶️ Play text aloud</button>
+          <button id="playText" type="button">▶️ Play</button>
           <button id="start" type="button" class="practice-button">
             🎤 Start practice
           </button>
@@ -699,12 +704,8 @@
             aria-expanded="false"
             aria-controls="advancedSettingsPanel"
           >
-            ⚙️ Show advanced settings
+            ⚙️ Advanced
           </button>
-          <p id="advancedHelperText" class="helper-text">
-            Adjust the recognition model and filters. Your choices are saved for
-            next time.
-          </p>
         </div>
         <section
           id="advancedSettingsPanel"
@@ -762,9 +763,7 @@
       <section id="history" class="history" aria-live="polite">
         <div class="history-header">
           <h2 id="historyHeading">Practice history</h2>
-          <p id="historyHelper">
-            Your most recent attempt for each passage is stored on this device.
-          </p>
+          <p id="historyHelper"></p>
         </div>
         <p id="historyEmpty" class="history-empty-message">
           No practice attempts saved yet.
@@ -780,18 +779,11 @@
     <script>
       const htmlElement = document.documentElement;
       const appTitle = document.getElementById("appTitle");
-      const interfaceLanguageLabel = document.getElementById(
-        "interfaceLanguageLabel",
-      );
       const languageToggleRow = document.querySelector(".language-toggle-row");
       const languageButtons = Array.from(
         document.querySelectorAll(".language-button"),
       );
-      const paragraphLabelEl = document.getElementById("paragraphLabel");
-      const customTextLabelEl = document.getElementById("customTextLabel");
-      const languageSelectLabelEl = document.getElementById(
-        "languageSelectLabel",
-      );
+      const practiceLabelEl = document.getElementById("practiceLabel");
       const paragraphSelect = document.getElementById("paragraph");
       const customTextRow = document.getElementById("customTextRow");
       const customTextInput = document.getElementById("customText");
@@ -820,7 +812,6 @@
       );
       const ttsVoiceLabelEl = document.querySelector('label[for="ttsVoice"]');
       const ttsVoiceSelect = document.getElementById("ttsVoice");
-      const advancedHelperTextEl = document.getElementById("advancedHelperText");
       const recognitionLanguageSelect = document.getElementById(
         "recognitionLanguage",
       );
@@ -854,7 +845,7 @@
         typeof SpeechSynthesisUtterance !== "undefined";
       const synth = supportsSpeechSynthesis ? window.speechSynthesis : null;
       let voiceRetryTimeoutId = null;
-      const SLOW_WORD_THRESHOLD_MS = 1500;
+      const SLOW_WORD_THRESHOLD_MS = 2500;
       const CLOSE_SIMILARITY_THRESHOLD = 0.5;
       const MATCH_LOOKAHEAD_LIMIT = 6;
       const CUSTOM_OPTION_ID = "custom";
@@ -874,28 +865,24 @@
         en: {
           documentTitle: "Pronunciation Practice",
           appHeading: "Pronunciation Practice",
-          interfaceLanguageLabel: "Interface language",
           interfaceLanguageAriaLabel: "Interface language",
-          interfaceLanguageEnglish: "English",
-          interfaceLanguageCatalan: "Català",
-          paragraphLabel: "Paragraph",
-          customTextLabel: "Your practice text",
+          interfaceLanguageEnglish: "EN",
+          interfaceLanguageCatalan: "CA",
+          practiceLabel: "Practice",
+          paragraphSelectAria: "Choose a practice passage",
+          customTextAria: "Practice text editor",
           customTextPlaceholder: "Type or paste the text you want to practise.",
-          customHelper:
-            "This text is used whenever the current custom option is selected. Click “Add another custom text” to create more slots.",
+          customHelper: "",
           customSavedHelper:
             "This saved text is editable below. Use the dropdown to switch between your custom passages.",
           presetHelper:
             "This passage comes from the list above. Select “Custom text” to enter your own.",
           addCustomText: "➕ Add another custom text",
-          languageSelectLabel: "Language",
-          playButtonLabel: "▶️ Play text aloud",
+          playButtonLabel: "▶️ Play",
           startButtonLabel: "🎤 Start practice",
           stopButtonLabel: "⏹ Stop",
-          advancedToggleShow: "⚙️ Show advanced settings",
-          advancedToggleHide: "⚙️ Hide advanced settings",
-          advancedHelper:
-            "Adjust the recognition model and filters. Your choices are saved for next time.",
+          advancedToggleShow: "⚙️ Advanced",
+          advancedToggleHide: "⚙️ Hide advanced",
           modelSizeLabel: "Model size",
           computeTypeLabel: "Compute type",
           ttsVoiceLabel: "Text-to-speech voice",
@@ -956,14 +943,13 @@
             "Something went wrong while processing the recording.",
           transcriptionRequestFailed: "Transcription request failed",
           noSpeechRecognised: "No speech was recognised. Please try again.",
-          recognitionOptionEn: "English (United States)",
-          recognitionOptionCa: "Catalan (Catalonia)",
-          recognitionOptionFr: "French (France)",
-          recognitionOptionIt: "Italian (Italy)",
+          recognitionOptionEn: "English",
+          recognitionOptionCa: "Catalan",
+          recognitionOptionFr: "French",
+          recognitionOptionIt: "Italian",
           recognitionOptionAr: "Arabic",
           historyHeading: "Practice history",
-          historyHelper:
-            "Your most recent attempt for each passage is stored on this device.",
+          historyHelper: "",
           historyEmpty: "No practice attempts saved yet.",
           historyListLabel: "Saved practice results",
           historyPractisedOn: (datetime) => `Practised on ${datetime}`,
@@ -980,28 +966,24 @@
         ca: {
           documentTitle: "Pràctica de pronunciació",
           appHeading: "Pràctica de pronunciació",
-          interfaceLanguageLabel: "Idioma de la interfície",
           interfaceLanguageAriaLabel: "Idioma de la interfície",
-          interfaceLanguageEnglish: "Anglès",
-          interfaceLanguageCatalan: "Català",
-          paragraphLabel: "Paràgraf",
-          customTextLabel: "El teu text de pràctica",
+          interfaceLanguageEnglish: "EN",
+          interfaceLanguageCatalan: "CA",
+          practiceLabel: "Pràctica",
+          paragraphSelectAria: "Tria un fragment de pràctica",
+          customTextAria: "Editor de text de pràctica",
           customTextPlaceholder: "Escriu o enganxa el text amb què vols practicar.",
-          customHelper:
-            "Aquest text s'utilitza sempre que es selecciona l'opció personalitzada actual. Fes clic a “Afegeix un altre text personalitzat” per crear més espais.",
+          customHelper: "",
           customSavedHelper:
             "Aquest text desat es pot editar a continuació. Utilitza el desplegable per canviar entre els teus textos personalitzats.",
           presetHelper:
             "Aquest fragment prové de la llista anterior. Selecciona “Text personalitzat” per introduir el teu propi.",
           addCustomText: "➕ Afegeix un altre text personalitzat",
-          languageSelectLabel: "Idioma",
-          playButtonLabel: "▶️ Reprodueix el text en veu alta",
+          playButtonLabel: "▶️ Reprodueix",
           startButtonLabel: "🎤 Comença la pràctica",
           stopButtonLabel: "⏹ Atura",
-          advancedToggleShow: "⚙️ Mostra la configuració avançada",
-          advancedToggleHide: "⚙️ Amaga la configuració avançada",
-          advancedHelper:
-            "Ajusta el model de reconeixement i els filtres. Les teves opcions es desen per a la pròxima vegada.",
+          advancedToggleShow: "⚙️ Opcions avançades",
+          advancedToggleHide: "⚙️ Amaga les opcions avançades",
           modelSizeLabel: "Mida del model",
           computeTypeLabel: "Tipus de còmput",
           ttsVoiceLabel: "Veu de text a veu",
@@ -1069,14 +1051,13 @@
             "S'ha produït un error en processar la gravació.",
           transcriptionRequestFailed: "La sol·licitud de transcripció ha fallat",
           noSpeechRecognised: "No s'ha reconegut cap veu. Torna-ho a provar.",
-          recognitionOptionEn: "Anglès (Estats Units)",
-          recognitionOptionCa: "Català (Catalunya)",
-          recognitionOptionFr: "Francès (França)",
-          recognitionOptionIt: "Italià (Itàlia)",
+          recognitionOptionEn: "Anglès",
+          recognitionOptionCa: "Català",
+          recognitionOptionFr: "Francès",
+          recognitionOptionIt: "Italià",
           recognitionOptionAr: "Àrab",
           historyHeading: "Historial de pràctica",
-          historyHelper:
-            "L'últim intent de cada fragment es desa en aquest dispositiu.",
+          historyHelper: "",
           historyEmpty: "Encara no hi ha intents desats.",
           historyListLabel: "Resultats de pràctica desats",
           historyPractisedOn: (datetime) => `Practicat el ${datetime}`,
@@ -1589,18 +1570,9 @@
             t("interfaceLanguageAriaLabel"),
           );
         }
-        if (interfaceLanguageLabel) {
-          interfaceLanguageLabel.textContent = t("interfaceLanguageLabel");
-        }
         updateLanguageButtonStates();
-        if (paragraphLabelEl) {
-          paragraphLabelEl.textContent = t("paragraphLabel");
-        }
-        if (customTextLabelEl) {
-          customTextLabelEl.textContent = t("customTextLabel");
-        }
-        if (languageSelectLabelEl) {
-          languageSelectLabelEl.textContent = t("languageSelectLabel");
+        if (practiceLabelEl) {
+          practiceLabelEl.textContent = t("practiceLabel");
         }
         if (addCustomTextButton) {
           addCustomTextButton.textContent = t("addCustomText");
@@ -1613,9 +1585,6 @@
         }
         if (stopButton) {
           stopButton.textContent = t("stopButtonLabel");
-        }
-        if (advancedHelperTextEl) {
-          advancedHelperTextEl.textContent = t("advancedHelper");
         }
         if (advancedModelSizeLabel) {
           advancedModelSizeLabel.textContent = t("modelSizeLabel");
@@ -1677,20 +1646,32 @@
         renderPracticeHistory();
 
         if (customTextInput) {
-          if (customTextInput.classList.contains("interactive")) {
-            helperText.textContent = t("legendHelper");
-          } else {
-            const selected = getSelectedParagraph();
-            if (selected && isCustomParagraphId(selected.id)) {
-              const entry = getCustomEntryById(selected.id);
-              if (entry) {
-                customTextInput.dataset.placeholder = entry.placeholder;
-                helperText.textContent = entry.helperText;
-              }
+          customTextInput.setAttribute("aria-label", t("customTextAria"));
+          if (helperText) {
+            if (customTextInput.classList.contains("interactive")) {
+              helperText.textContent = t("legendHelper");
             } else {
-              customTextInput.dataset.placeholder = "";
-              helperText.textContent = t("presetHelper");
+              const selected = getSelectedParagraph();
+              if (selected && isCustomParagraphId(selected.id)) {
+                const entry = getCustomEntryById(selected.id);
+                if (entry) {
+                  customTextInput.dataset.placeholder = entry.placeholder;
+                  helperText.textContent = entry.helperText;
+                }
+              } else {
+                customTextInput.dataset.placeholder = "";
+                helperText.textContent = t("presetHelper");
+              }
             }
+          }
+        }
+
+        if (paragraphSelect) {
+          const ariaLabel = t("paragraphSelectAria");
+          if (ariaLabel) {
+            paragraphSelect.setAttribute("aria-label", ariaLabel);
+          } else {
+            paragraphSelect.removeAttribute("aria-label");
           }
         }
 
@@ -2317,12 +2298,16 @@
           customTextInput.setAttribute("aria-readonly", "false");
           customTextInput.dataset.placeholder =
             customEntry.placeholder || t("customPlaceholder");
-          helperText.textContent = customEntry.helperText || t("customHelper");
+          if (helperText) {
+            helperText.textContent = customEntry.helperText || t("customHelper");
+          }
         } else {
           customTextInput.setAttribute("contenteditable", "false");
           customTextInput.setAttribute("aria-readonly", "true");
           customTextInput.dataset.placeholder = "";
-          helperText.textContent = t("presetHelper");
+          if (helperText) {
+            helperText.textContent = t("presetHelper");
+          }
         }
       }
 
@@ -2438,7 +2423,9 @@
         customTextInput.classList.add("interactive");
         customTextInput.setAttribute("contenteditable", "false");
         customTextInput.setAttribute("aria-readonly", "true");
-        helperText.textContent = t("legendHelper");
+        if (helperText) {
+          helperText.textContent = t("legendHelper");
+        }
         if (legendCard) {
           legendCard.classList.remove("active");
           legendCard.setAttribute("aria-hidden", "true");
@@ -2705,7 +2692,13 @@
           if (isConfirmed) {
             const meta = metadata[matchIndex];
             status.slow = Boolean(meta?.slow);
-            status.repeated = Boolean(meta?.repeated);
+            if (meta?.repeated) {
+              const previousTarget = targetWords[i - 1]?.cleaned || "";
+              const isTargetRepeat = previousTarget && previousTarget === target;
+              status.repeated = !isTargetRepeat;
+            } else {
+              status.repeated = false;
+            }
           }
 
           spokenIndex = matchIndex + 1;

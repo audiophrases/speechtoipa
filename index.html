@@ -2890,14 +2890,25 @@
         return targetTokens.map((_, idx) => {
           const current = analysis[idx] || createEmptyStatus();
           const locked = lockedAnalysis[idx];
-          if (!locked && !current.provisional && current.correctness !== "pending") {
+
+          if (current.provisional || current.correctness === "pending") {
+            if (locked) {
+              lockedAnalysis[idx] = null;
+            }
+            return current;
+          }
+
+          if (!locked) {
             lockedAnalysis[idx] = { ...current, provisional: false };
             return lockedAnalysis[idx];
           }
-          if (locked && !locked.provisional) {
-            return locked;
-          }
-          return current;
+
+          lockedAnalysis[idx] = {
+            ...locked,
+            ...current,
+            provisional: false,
+          };
+          return lockedAnalysis[idx];
         });
       }
 
@@ -3037,16 +3048,8 @@
             (status) => status && status.correctness === "correct"
           );
 
-        if (completedSuccessfully && recognition && shouldRestartRecognition) {
-          shouldRestartRecognition = false;
-          isListening = false;
-          stopButton.disabled = true;
-          toggleListening(false);
-          try {
-            recognition.stop();
-          } catch (error) {
-            console.error(error);
-          }
+        if (completedSuccessfully && recognition) {
+          toggleListening(true);
         }
 
         const confirmedTranscript = confirmedTokens.join(" ");

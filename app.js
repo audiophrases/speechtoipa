@@ -3,7 +3,7 @@ const TARGET_LANGS = [
   { code: 'en', label: 'English' },
   { code: 'ca', label: 'Catalan' },
   { code: 'it', label: 'Italian' },
-  { code: 'ary', label: 'Moroccan Darija' }
+  { code: 'ma', label: 'Moroccan Darija' }
 ];
 
 const BASE_LANGS = [
@@ -11,7 +11,8 @@ const BASE_LANGS = [
   { code: 'es', label: 'Spanish' },
   { code: 'ca', label: 'Catalan' },
   { code: 'fr', label: 'French' },
-  { code: 'it', label: 'Italian' }
+  { code: 'it', label: 'Italian' },
+  { code: 'ma', label: 'Moroccan Darija' }
 ];
 
 const STORAGE_KEY = 'speechReadingProgress';
@@ -126,7 +127,7 @@ function hydrateFromStorage() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return;
   try {
-    const saved = JSON.parse(raw);
+    const saved = normalizeLegacyCodes(JSON.parse(raw));
     if (saved.targetLang) state.targetLang = saved.targetLang;
     if (saved.baseLang) state.baseLang = saved.baseLang;
     if (saved.lessonId) state.lessonId = saved.lessonId;
@@ -139,6 +140,24 @@ function hydrateFromStorage() {
   } catch (err) {
     console.error('Failed to parse saved progress', err);
   }
+}
+
+function normalizeLegacyCodes(saved) {
+  if (saved.targetLang === 'ary') saved.targetLang = 'ma';
+  if (saved.baseLang === 'ary') saved.baseLang = 'ma';
+  if (saved.lessonId?.startsWith('ary_')) {
+    saved.lessonId = saved.lessonId.replace(/^ary_/, 'ma_');
+  }
+
+  if (saved.progress) {
+    const legacyLessonKey = `ary_${DEFAULT_LESSON_SUFFIX}`;
+    const updatedLessonKey = `ma_${DEFAULT_LESSON_SUFFIX}`;
+    if (saved.progress[legacyLessonKey] && !saved.progress[updatedLessonKey]) {
+      saved.progress[updatedLessonKey] = saved.progress[legacyLessonKey];
+    }
+  }
+
+  return saved;
 }
 
 function saveProgress(bestScore) {
@@ -254,6 +273,8 @@ function getLangCode(l2) {
       return 'ca-ES';
     case 'it':
       return 'it-IT';
+    case 'ma':
+      return 'ar-MA';
     case 'ary':
       return 'ar-MA';
     default:

@@ -1,1 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speech to IPA - Browser Practice</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Language Practice (Browser Only)</h1>
+    <p class="tagline">Listen, speak, and get instant feedback without servers or paid APIs.</p>
+  </header>
 
+  <section class="settings" aria-label="Language selection">
+    <div class="field">
+      <label for="target-lang">Target language (L2):</label>
+      <select id="target-lang"></select>
+    </div>
+    <div class="field">
+      <label for="base-lang">Base language (L1):</label>
+      <select id="base-lang"></select>
+    </div>
+    <div class="field">
+      <label for="lesson-select">Lesson:</label>
+      <select id="lesson-select"></select>
+    </div>
+  </section>
+
+  <main id="app" class="card" aria-live="polite">
+    <div class="sentence" id="sentence"></div>
+    <div class="controls">
+      <button id="play-btn">▶ Play</button>
+      <button id="slow-btn">🐢 Slow</button>
+      <button id="record-btn">🎙️ Record</button>
+      <button id="stop-btn" class="secondary">⏹ Stop</button>
+      <button id="next-btn" class="secondary">Next sentence ➡</button>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="transcript" class="transcript" aria-live="polite"></div>
+    <div id="feedback" class="feedback" aria-live="polite"></div>
+  </main>
+
+  <section class="notes card">
+    <h2>How this works</h2>
+    <ul>
+      <li>Everything runs in your browser using the Web Speech API.</li>
+      <li>No servers, no paid APIs, and lessons come from static JSON files.</li>
+      <li>Hover or tap words to see translations in your base language.</li>
+      <li>Your language choices and progress are stored locally in your browser.</li>
+    </ul>
+    <p class="small">Add new lessons by dropping JSON files into <code>/data</code>. The filename should follow <code>{lang}_a1_introductions.json</code> style and include <code>lang</code>, <code>level</code>, <code>theme</code>, and <code>sentences</code> fields.</p>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

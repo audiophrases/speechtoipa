@@ -609,11 +609,42 @@
         text-align: center;
         box-shadow: 0 24px 48px rgba(15, 23, 42, 0.55);
         min-width: 240px;
+        position: relative;
+        overflow: hidden;
       }
 
       .success-modal__emoji {
         font-size: 2.5rem;
         margin-bottom: 1rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      .success-modal__confetti {
+        position: absolute;
+        inset: -30%;
+        background-image:
+          radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.45), transparent 35%),
+          radial-gradient(circle at 80% 25%, rgba(34, 197, 94, 0.45), transparent 32%),
+          radial-gradient(circle at 30% 75%, rgba(236, 72, 153, 0.4), transparent 30%),
+          radial-gradient(circle at 70% 80%, rgba(248, 180, 0, 0.45), transparent 34%),
+          radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.25), transparent 38%);
+        opacity: 0.55;
+        pointer-events: none;
+        mix-blend-mode: screen;
+        animation: confettiFloat 12s linear infinite;
+      }
+
+      @keyframes confettiFloat {
+        0% {
+          transform: translateY(0) rotate(0deg);
+        }
+        50% {
+          transform: translateY(-10px) rotate(6deg);
+        }
+        100% {
+          transform: translateY(0) rotate(0deg);
+        }
       }
 
       .success-modal__button {
@@ -626,6 +657,8 @@
         border-radius: 12px;
         cursor: pointer;
         transition: background 120ms ease, transform 120ms ease;
+        position: relative;
+        z-index: 1;
       }
 
       .success-modal__button:hover,
@@ -891,9 +924,10 @@
       aria-label="Practice complete"
     >
       <div class="success-modal__content">
-        <div class="success-modal__emoji" aria-hidden="true">🏆</div>
+        <div class="success-modal__confetti" aria-hidden="true"></div>
+        <div class="success-modal__emoji" aria-hidden="true">👏</div>
         <button type="button" id="successModalClose" class="success-modal__button">
-          OK
+          ✌️
         </button>
       </div>
     </div>

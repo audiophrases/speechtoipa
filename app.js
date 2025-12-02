@@ -25,6 +25,8 @@ let wordSpans = [];
 let targetTokens = [];
 let lastTranscript = '';
 let currentSentenceText = '';
+let wordStatus = [];
+let lastOrderedIndex = -1;
 
 const state = {
   targetLang: 'fr',
@@ -247,6 +249,7 @@ function renderCurrentSentence() {
     wordSpans.push(span);
     sentenceEl.appendChild(span);
   });
+  resetSentenceState();
   els.feedback.textContent = '';
   els.transcript.textContent = '';
   els.status.textContent = `Sentence ${state.currentIndex + 1} / ${state.sentences.length}`;
@@ -354,10 +357,7 @@ function startRecording() {
     lastTranscript = '';
     els.transcript.textContent = '';
     els.feedback.textContent = '';
-    wordSpans.forEach((span) => {
-      span.classList.remove('word-correct', 'word-wrong', 'word-pending');
-      span.classList.add('word-pending');
-    });
+    resetSentenceState();
     state.recognition.lang = getLangCode(state.targetLang);
     state.recognition.start();
   } catch (err) {
@@ -381,56 +381,119 @@ function updateRecordState() {
   }
 }
 
-function tokenize(text) {
-  return text
+function normalizeText(t) {
+  return t
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[.,!?;:]/g, '')
-    .trim()
+    .trim();
+}
+
+function tokenize(text) {
+  return normalizeText(text)
     .split(/\s+/)
     .filter(Boolean);
 }
 
 function isSimilar(a, b) {
+  if (!a || !b) return false;
   if (a === b) return true;
   if (Math.abs(a.length - b.length) > 2) return false;
   return a[0] === b[0];
 }
 
+function resetSentenceState() {
+  lastOrderedIndex = -1;
+  lastTranscript = '';
+  wordStatus = targetTokens.map(() => 'pending');
+  updateWordSpanClasses();
+}
+
+function updateWordSpanClasses() {
+  wordSpans.forEach((span, i) => {
+    span.classList.remove('word-correct', 'word-wrong', 'word-pending');
+    const status = wordStatus[i] || 'pending';
+    if (status === 'correct') span.classList.add('word-correct');
+    else if (status === 'wrong') span.classList.add('word-wrong');
+    else span.classList.add('word-pending');
+  });
+}
+
+function checkIfSentenceComplete() {
+  if (wordStatus.every((s) => s === 'correct')) {
+    if (state.recognition) {
+      try {
+        state.recognition.stop();
+      } catch (e) {
+        // ignore
+      }
+    }
+    const feedbackEl = document.getElementById('feedback');
+    if (feedbackEl) {
+      feedbackEl.textContent = 'Perfecte! 👏 Has pronunciat tota la frase correctament.';
+    }
+    setStatus('Recording stopped – sentence complete ✅');
+  }
+}
+
 function updateLiveFeedback(transcript) {
   const spokenTokens = tokenize(transcript);
-  const relevantTokens = spokenTokens.slice(-targetTokens.length);
   const n = targetTokens.length;
-  const m = relevantTokens.length;
 
-  let correctPrefix = 0;
-
-  while (
-    correctPrefix < n &&
-    correctPrefix < m &&
-    isSimilar(targetTokens[correctPrefix], relevantTokens[correctPrefix])
-  ) {
-    correctPrefix++;
-  }
-
-  wordSpans.forEach((span) => {
-    span.classList.remove('word-correct', 'word-wrong', 'word-pending');
-  });
+  const prevStatus = [...wordStatus];
+  wordStatus = targetTokens.map(() => 'pending');
 
   for (let i = 0; i < n; i++) {
-    if (i < correctPrefix) {
-      wordSpans[i]?.classList.add('word-correct');
-    } else if (i === correctPrefix && i < m) {
-      wordSpans[i]?.classList.add('word-wrong');
-    } else {
-      wordSpans[i]?.classList.add('word-pending');
+    const target = targetTokens[i];
+    let found = false;
+    for (let j = 0; j < spokenTokens.length; j++) {
+      if (isSimilar(target, spokenTokens[j])) {
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      wordStatus[i] = 'correct';
     }
   }
+
+  let firstNotCorrect = -1;
+  let orderedPrefix = 0;
+  for (let i = 0; i < n; i++) {
+    if (wordStatus[i] !== 'correct') {
+      firstNotCorrect = i;
+      break;
+    }
+    orderedPrefix++;
+  }
+
+  lastOrderedIndex = orderedPrefix - 1;
+
+  if (firstNotCorrect !== -1) {
+    wordStatus[firstNotCorrect] = 'wrong';
+  }
+
+  for (let i = 0; i < n; i++) {
+    const wasWrong = prevStatus[i] === 'wrong';
+    const isNowCorrect = wordStatus[i] === 'correct';
+    if (wasWrong && isNowCorrect) {
+      for (let k = i + 1; k < n; k++) {
+        if (wordStatus[k] === 'correct') {
+          wordStatus[k] = 'pending';
+        }
+      }
+      break;
+    }
+  }
+
+  updateWordSpanClasses();
 
   if (els.transcript) {
     els.transcript.textContent = transcript;
   }
+
+  checkIfSentenceComplete();
 }
 
 function finalizeScore(transcript) {

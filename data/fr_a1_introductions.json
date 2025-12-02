@@ -1,0 +1,83 @@
+{
+  "lang": "fr",
+  "level": "A1",
+  "theme": "introductions",
+  "sentences": [
+    {
+      "id": "fr_a1_intro_001",
+      "text": "Bonjour, je m'appelle Emma.",
+      "tokens": [
+        {
+          "surface": "Bonjour,",
+          "translations": {
+            "es": "hola",
+            "ca": "bon dia",
+            "en": "hello"
+          }
+        },
+        {
+          "surface": "je",
+          "translations": {
+            "es": "yo",
+            "ca": "jo",
+            "en": "I"
+          }
+        },
+        {
+          "surface": "m'appelle",
+          "translations": {
+            "es": "me llamo",
+            "ca": "em dic",
+            "en": "my name is"
+          }
+        },
+        {
+          "surface": "Emma.",
+          "translations": {
+            "es": "Emma",
+            "ca": "Emma",
+            "en": "Emma"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fr_a1_intro_002",
+      "text": "Je viens de Paris.",
+      "tokens": [
+        {
+          "surface": "Je",
+          "translations": {
+            "es": "yo",
+            "ca": "jo",
+            "en": "I"
+          }
+        },
+        {
+          "surface": "viens",
+          "translations": {
+            "es": "vengo",
+            "ca": "vinc",
+            "en": "come"
+          }
+        },
+        {
+          "surface": "de",
+          "translations": {
+            "es": "de",
+            "ca": "de",
+            "en": "from"
+          }
+        },
+        {
+          "surface": "Paris.",
+          "translations": {
+            "es": "París",
+            "ca": "París",
+            "en": "Paris"
+          }
+        }
+      ]
+    }
+  ]
+}

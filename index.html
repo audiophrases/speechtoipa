@@ -215,10 +215,12 @@
 
       select {
         min-width: 220px;
-        background-color: rgba(15, 23, 42, 0.88);
+        background-color: rgba(15, 23, 42, 0.92);
         color: var(--text);
         border-color: rgba(148, 163, 184, 0.45);
-        box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08);
+        box-shadow: none;
+        border-radius: 12px;
+        padding: 0.6rem 1rem;
       }
 
       input[type="text"] {
@@ -3270,16 +3272,16 @@
             ? analysis[idx] || createEmptyStatus()
             : createEmptyStatus();
 
-        const wordLabel = span.dataset.word || word.original;
-        const feedback = getWordFeedback(status);
-        const actionLabel = allowWordPlayback
-          ? t("wordPronunciation", wordLabel)
-          : t("wordGeneric", wordLabel);
+          const wordLabel = span.dataset.word || word.original;
+          const feedback = getWordFeedback(status);
+          const actionLabel = allowWordPlayback
+            ? t("wordPronunciation", wordLabel)
+            : t("wordGeneric", wordLabel);
 
-        span.setAttribute(
-          "aria-label",
-          feedback ? `${actionLabel} ${feedback}` : actionLabel
-        );
+          span.setAttribute(
+            "aria-label",
+            feedback ? `${actionLabel} ${feedback}` : actionLabel,
+          );
 
           if (feedback) {
             span.title = feedback;
@@ -3300,6 +3302,26 @@
         updatePlayButtonState();
       }
 
+      function getPreferredSpeechLocale() {
+        const selectedOption = recognitionLanguageSelect?.selectedOptions?.[0];
+        const selectedLocale = selectedOption?.value;
+        if (selectedLocale) {
+          return selectedLocale;
+        }
+
+        if (advancedConfig?.recognitionLocale) {
+          return advancedConfig.recognitionLocale;
+        }
+
+        const practiceLanguage = getPracticeLanguage();
+        if (practiceLanguage) {
+          const base = practiceLanguage.slice(0, 2).toLowerCase();
+          return `${base}-${base.toUpperCase()}`;
+        }
+
+        return defaultRecognitionLocale || "en-US";
+      }
+
       function applyVoiceSettings(utterance, options = {}) {
         if (!utterance || !supportsSpeechSynthesis || !synth) {
           return;
@@ -3309,15 +3331,27 @@
         utterance.rate = rate;
         utterance.pitch = pitch;
 
-        const preferredLocale =
-          advancedConfig?.recognitionLocale || defaultRecognitionLocale || "en-US";
+        const preferredLocale = getPreferredSpeechLocale();
+        const availableVoices =
+          typeof synth.getVoices === "function" ? synth.getVoices() : [];
         let selectedVoice = null;
         if (advancedConfig?.ttsVoice) {
-          const availableVoices =
-            typeof synth.getVoices === "function" ? synth.getVoices() : [];
           selectedVoice = availableVoices.find(
             (voice) => voice.voiceURI === advancedConfig.ttsVoice,
           );
+        } else if (preferredLocale && availableVoices.length) {
+          const normalized = preferredLocale.toLowerCase();
+          selectedVoice =
+            availableVoices.find(
+              (voice) => voice.lang?.toLowerCase() === normalized,
+            ) ||
+            availableVoices.find((voice) =>
+              voice.lang
+                ?.toLowerCase()
+                .split("-")
+                .shift()
+                ?.startsWith(normalized.split("-")[0]),
+            );
         }
 
         if (selectedVoice) {

@@ -2968,6 +2968,7 @@
       }
 
       function showSuccessCelebration() {
+        stopListening();
         if (!successModal || hasShownSuccessCelebration) {
           return;
         }
@@ -3212,9 +3213,6 @@
 
         if (completedSuccessfully) {
           showSuccessCelebration();
-          if (recognition) {
-            toggleListening(true);
-          }
         }
 
         const confirmedTranscript = confirmedTokens.join(" ");

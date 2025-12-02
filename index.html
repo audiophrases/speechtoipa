@@ -71,6 +71,7 @@
 
       label,
       select,
+      input,
       button {
         font-size: 1rem;
       }
@@ -133,6 +134,30 @@
         align-items: center;
       }
 
+      .practice-filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.5rem;
+        width: 100%;
+      }
+
+      .practice-filters .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .level-navigation {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .level-navigation button {
+        flex: 1 1 180px;
+      }
+
       .practice-language {
         display: inline-flex;
         align-items: center;
@@ -171,7 +196,14 @@
         min-width: 170px;
       }
 
+      .practice-meta {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin: 0.35rem 0 0;
+      }
+
       select,
+      input,
       button {
         background: rgba(148, 163, 184, 0.12);
         color: inherit;
@@ -187,6 +219,15 @@
         color: var(--text);
         border-color: rgba(148, 163, 184, 0.45);
         box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08);
+      }
+
+      input[type="text"] {
+        min-width: 200px;
+        background-color: rgba(15, 23, 42, 0.88);
+        color: var(--text);
+        border-color: rgba(148, 163, 184, 0.45);
+        padding: 0.65rem 1rem;
+        border-radius: 12px;
       }
 
       select option {
@@ -229,6 +270,29 @@
 
       .text-input-wrapper {
         position: relative;
+      }
+
+      .custom-actions {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+
+      .custom-actions .field-group {
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        align-items: end;
+      }
+
+      .custom-actions label {
+        font-weight: 600;
+      }
+
+      .custom-actions .button-row {
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
       }
 
       .add-custom-button {
@@ -687,7 +751,8 @@
 
         select,
         button,
-        textarea {
+        textarea,
+        input {
           width: 100%;
         }
 
@@ -780,6 +845,21 @@
               id="paragraph"
               aria-labelledby="practiceLabel"
             ></select>
+            <div class="practice-filters" aria-live="polite">
+              <div class="field">
+                <label id="levelFilterLabel" for="levelFilter">Level filter</label>
+                <select id="levelFilter"></select>
+              </div>
+              <div class="field">
+                <label id="themeFilterLabel" for="themeFilter">Focus</label>
+                <select id="themeFilter"></select>
+              </div>
+            </div>
+            <div class="level-navigation">
+              <button id="previousLevel" type="button">⬅️ Previous level</button>
+              <button id="nextLevel" type="button">Next level ➡️</button>
+            </div>
+            <p id="practiceMeta" class="practice-meta"></p>
           </div>
           <div class="text-input-wrapper">
             <div
@@ -825,9 +905,33 @@
             </div>
           </div>
           <p id="customTextHelper" class="helper-text"></p>
-          <button id="addCustomText" type="button" class="add-custom-button">
-            ➕ Add another custom text
-          </button>
+          <div class="custom-actions">
+            <div class="field-group">
+              <div class="field">
+                <label for="customTitle" id="customTitleLabel">Title your custom text</label>
+                <input
+                  type="text"
+                  id="customTitle"
+                  name="customTitle"
+                  placeholder="e.g., Travel phrases"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="button-row">
+                <button id="saveCustomText" type="button" class="practice-button">
+                  💾 Save this text
+                </button>
+                <button
+                  id="addCustomText"
+                  type="button"
+                  class="add-custom-button"
+                >
+                  🆕 Start a new custom text
+                </button>
+              </div>
+            </div>
+            <p id="customSavedList" class="helper-text"></p>
+          </div>
         </div>
         <div class="control-row">
           <button id="playText" type="button">▶️ Play</button>
@@ -940,10 +1044,21 @@
         document.querySelectorAll(".language-button"),
       );
       const practiceLabelEl = document.getElementById("practiceLabel");
+      const levelFilterLabelEl = document.getElementById("levelFilterLabel");
+      const themeFilterLabelEl = document.getElementById("themeFilterLabel");
       const paragraphSelect = document.getElementById("paragraph");
+      const levelFilterSelect = document.getElementById("levelFilter");
+      const themeFilterSelect = document.getElementById("themeFilter");
+      const previousLevelButton = document.getElementById("previousLevel");
+      const nextLevelButton = document.getElementById("nextLevel");
+      const practiceMeta = document.getElementById("practiceMeta");
       const customTextRow = document.getElementById("customTextRow");
       const customTextInput = document.getElementById("customText");
       const helperText = customTextRow.querySelector(".helper-text");
+      const customTitleInput = document.getElementById("customTitle");
+      const customSavedList = document.getElementById("customSavedList");
+      const customTitleLabel = document.getElementById("customTitleLabel");
+      const saveCustomTextButton = document.getElementById("saveCustomText");
       const addCustomTextButton = document.getElementById("addCustomText");
       const playTextButton = document.getElementById("playText");
       const startButton = document.getElementById("start");
@@ -1009,6 +1124,7 @@
       const CUSTOM_OPTION_ID = "custom";
       const ADVANCED_CONFIG_STORAGE_KEY = "speechtoipa:advanced-config";
       const PRACTICE_HISTORY_STORAGE_KEY = "speechtoipa:practice-history";
+      const CUSTOM_TEXT_STORAGE_KEY = "speechtoipa:custom-texts";
 
       const defaultRecognitionLocale =
         navigator.language && typeof navigator.language === "string"
@@ -1028,6 +1144,10 @@
           interfaceLanguageCatalan: "CA",
           practiceLabel: "Practise",
           paragraphSelectAria: "Choose a practice passage",
+          levelFilterLabel: "Level filter",
+          themeFilterLabel: "Focus filter",
+          levelAll: "All levels",
+          themeAll: "All focuses",
           customTextAria: "Practice text editor",
           customTextPlaceholder: "Type or paste the text you want to practise.",
           customHelper: "",
@@ -1035,10 +1155,25 @@
             "This saved text is editable below. Use the dropdown to switch between your custom passages.",
           presetHelper:
             "This passage comes from the list above. Select “Custom text” to enter your own.",
-          addCustomText: "➕ Add another custom text",
+          addCustomText: "🆕 Start a new custom text",
+          saveCustomText: "💾 Save this text",
+          customTitleLabel: "Title your custom text",
+          customTitlePlaceholder: "e.g., Travel phrases",
+          customSavedListLabel: (names) =>
+            names?.length
+              ? `Saved custom texts: ${names.join(", ")}`
+              : "No saved custom texts yet.",
           playButtonLabel: "▶️ Play",
           startButtonLabel: "🎤 Start practice",
           stopButtonLabel: "⏹ Stop",
+          previousLevel: "⬅️ Previous level",
+          nextLevel: "Next level ➡️",
+          practiceMeta: (level, theme) => {
+            if (!level && !theme) return "";
+            if (level && theme) return `Level ${level} • ${theme}`;
+            if (level) return `Level ${level}`;
+            return theme;
+          },
           advancedToggleShow: "⚙️ Advanced",
           advancedToggleHide: "⚙️ Hide advanced",
           modelSizeLabel: "Model size",
@@ -1129,6 +1264,10 @@
           interfaceLanguageCatalan: "CA",
           practiceLabel: "Practica",
           paragraphSelectAria: "Tria un fragment de pràctica",
+          levelFilterLabel: "Filtra per nivell",
+          themeFilterLabel: "Filtra per focus",
+          levelAll: "Tots els nivells",
+          themeAll: "Tots els focus",
           customTextAria: "Editor de text de pràctica",
           customTextPlaceholder: "Escriu o enganxa el text amb què vols practicar.",
           customHelper: "",
@@ -1136,10 +1275,25 @@
             "Aquest text desat es pot editar a continuació. Utilitza el desplegable per canviar entre els teus textos personalitzats.",
           presetHelper:
             "Aquest fragment prové de la llista anterior. Selecciona “Text personalitzat” per introduir el teu propi.",
-          addCustomText: "➕ Afegeix un altre text personalitzat",
+          addCustomText: "🆕 Comença un text personalitzat nou",
+          saveCustomText: "💾 Desa aquest text",
+          customTitleLabel: "Posa un títol al teu text",
+          customTitlePlaceholder: "p. ex., Frases de viatge",
+          customSavedListLabel: (names) =>
+            names?.length
+              ? `Texts personalitzats desats: ${names.join(", ")}`
+              : "Encara no tens textos personalitzats desats.",
           playButtonLabel: "▶️ Reprodueix",
           startButtonLabel: "🎤 Comença la pràctica",
           stopButtonLabel: "⏹ Atura",
+          previousLevel: "⬅️ Nivell anterior",
+          nextLevel: "Nivell següent ➡️",
+          practiceMeta: (level, theme) => {
+            if (!level && !theme) return "";
+            if (level && theme) return `Nivell ${level} • ${theme}`;
+            if (level) return `Nivell ${level}`;
+            return theme;
+          },
           advancedToggleShow: "⚙️ Opcions avançades",
           advancedToggleHide: "⚙️ Amaga les opcions avançades",
           modelSizeLabel: "Mida del model",
@@ -1267,7 +1421,7 @@
 
       let uiLanguage = loadUiLanguage();
 
-      function t(key, arg) {
+      function t(key, ...args) {
         const pack = translations[uiLanguage] || translations.en;
         const fallback = translations.en;
         let value = pack[key];
@@ -1275,9 +1429,56 @@
           value = fallback[key];
         }
         if (typeof value === "function") {
-          return value(arg);
+          return value(...args);
         }
         return value;
+      }
+
+      function loadCustomTextStore() {
+        if (typeof localStorage === "undefined") {
+          return [];
+        }
+        try {
+          const raw = localStorage.getItem(CUSTOM_TEXT_STORAGE_KEY);
+          if (!raw) {
+            return [];
+          }
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) {
+            return [];
+          }
+          return parsed
+            .map((entry) => ({
+              id: entry?.id || "",
+              title: typeof entry?.title === "string" ? entry.title : "",
+              text: typeof entry?.text === "string" ? entry.text : "",
+            }))
+            .filter((entry) => entry.id || entry.text || entry.title);
+        } catch (error) {
+          console.warn("Failed to read custom texts", error);
+        }
+        return [];
+      }
+
+      function persistCustomTextStore(entries, texts) {
+        if (typeof localStorage === "undefined") {
+          return;
+        }
+        try {
+          const payload = entries
+            .filter(Boolean)
+            .map((entry) => ({
+              id: entry.id,
+              title:
+                entry.type === "saved"
+                  ? entry.title || entry.label || ""
+                  : entry.title || "",
+              text: texts.get(entry.id) || "",
+            }));
+          localStorage.setItem(CUSTOM_TEXT_STORAGE_KEY, JSON.stringify(payload));
+        } catch (error) {
+          console.warn("Failed to persist custom texts", error);
+        }
       }
 
       function loadPracticeHistory() {
@@ -1633,12 +1834,16 @@
         upsertPracticeHistoryEntry(summary);
       }
 
-      function createCustomEntry(id, type = "base", order = 1) {
+      function createCustomEntry(id, type = "base", order = 1, title = "") {
         return {
           id,
           type,
           order,
+          title: title || "",
           get label() {
+            if (this.title) {
+              return this.title;
+            }
             if (this.type === "base") {
               return t("customDefaultLabel");
             }
@@ -1732,8 +1937,40 @@
         if (practiceLabelEl) {
           practiceLabelEl.textContent = t("practiceLabel");
         }
+        populateLevelFilterOptions();
+        populateThemeFilterOptions();
+        if (levelFilterLabelEl) {
+          levelFilterLabelEl.textContent = t("levelFilterLabel");
+        }
+        if (themeFilterLabelEl) {
+          themeFilterLabelEl.textContent = t("themeFilterLabel");
+        }
+        if (levelFilterSelect) {
+          const label = t("levelFilterLabel");
+          levelFilterSelect.setAttribute("aria-label", label);
+        }
+        if (themeFilterSelect) {
+          const label = t("themeFilterLabel");
+          themeFilterSelect.setAttribute("aria-label", label);
+        }
         if (addCustomTextButton) {
           addCustomTextButton.textContent = t("addCustomText");
+        }
+        if (saveCustomTextButton) {
+          saveCustomTextButton.textContent = t("saveCustomText");
+        }
+        if (previousLevelButton) {
+          previousLevelButton.textContent = t("previousLevel");
+        }
+        if (nextLevelButton) {
+          nextLevelButton.textContent = t("nextLevel");
+        }
+        if (customTitleLabel) {
+          customTitleLabel.textContent = t("customTitleLabel");
+        }
+        if (customTitleInput) {
+          const placeholder = t("customTitlePlaceholder");
+          customTitleInput.placeholder = placeholder || "";
         }
         if (playTextButton) {
           playTextButton.textContent = t("playButtonLabel");
@@ -1849,6 +2086,8 @@
             transcriptEl.textContent = t("transcriptPending");
           }
         }
+
+        updateSavedCustomListSummary();
 
         updatePlayButtonState();
       }
@@ -2148,204 +2387,462 @@
           persistAdvancedConfig(advancedConfig);
         });
       }
+      const savedCustomStore = loadCustomTextStore();
       const customEntries = [createCustomEntry(CUSTOM_OPTION_ID, "base", 1)];
       const customTexts = new Map([[CUSTOM_OPTION_ID, ""]]);
-      let customEntryCount = 1;
+      let customEntryCount = Math.max(1, savedCustomStore.length + 1);
+
+      savedCustomStore.forEach((entry, index) => {
+        const derivedId = `${CUSTOM_OPTION_ID}-${index + 1}`;
+        const id = entry.id || derivedId;
+        const order = customEntries.length + 1;
+        const title = entry.title || t("customNumberedLabel", order);
+        if (id === CUSTOM_OPTION_ID) {
+          const baseTitle = entry.title || customEntries[0].title || "";
+          customEntries[0].title = baseTitle;
+          customTexts.set(CUSTOM_OPTION_ID, entry.text || "");
+          return;
+        }
+        customEntries.push(createCustomEntry(id, "saved", order, title));
+        customTexts.set(id, entry.text || "");
+        const numericId = Number.parseInt(id.split("-").pop(), 10);
+        if (Number.isInteger(numericId)) {
+          customEntryCount = Math.max(customEntryCount, numericId);
+        }
+      });
 
       const PRESET_PARAGRAPHS = {
         en: [
           {
-            id: "seashells",
-            label: "She sells seashells",
-            text:
-              "She sells seashells by the seashore; the shells she sells are surely seashells.",
+            id: "en-level-1-greetings",
+            label: "Level 1 · Greetings",
+            level: 1,
+            theme: "greetings",
+            text: "Hola! Hello! I smile, wave, and say thank you when someone helps me.",
           },
           {
-            id: "peter-piper",
-            label: "Peter Piper",
-            text:
-              "Peter Piper picked a peck of pickled peppers; a peck of pickled peppers Peter Piper picked.",
+            id: "en-level-2-intro",
+            label: "Level 2 · Introducing yourself",
+            level: 2,
+            theme: "introductions",
+            text: "Hi, I'm Sam. I like learning languages and meeting new friends at the park.",
           },
           {
-            id: "clam-can",
-            label: "Clean cream can",
-            text: "How can a clam cram in a clean cream can?",
+            id: "en-level-3-routine",
+            label: "Level 3 · Daily routine",
+            level: 3,
+            theme: "daily life",
+            text: "Each morning I brew tea, check my calendar, and take a short walk before work.",
           },
           {
-            id: "susie-shoeshine",
-            label: "Susie in a shoeshine shop",
-            text: "I saw Susie sitting in a shoeshine shop.",
+            id: "en-level-4-cafe",
+            label: "Level 4 · Ordering at a cafe",
+            level: 4,
+            theme: "food",
+            text: "Good afternoon! I'd like a small latte with oat milk and a warm croissant, please.",
           },
           {
-            id: "pad-kid",
-            label: "Pad kid poured",
-            text: "Pad kid poured curd pulled cod.",
+            id: "en-level-5-directions",
+            label: "Level 5 · Asking for directions",
+            level: 5,
+            theme: "travel",
+            text: "Excuse me, is the museum near here? I need the bus stop that goes toward the river.",
           },
           {
-            id: "fred-ted",
-            label: "Fred fed Ted",
-            text: "Fred fed Ted bread and Ted fed Fred bread.",
+            id: "en-level-6-weekend",
+            label: "Level 6 · Weekend plans",
+            level: 6,
+            theme: "social",
+            text: "This weekend I plan to cook for friends, practise guitar, and explore a new neighborhood.",
           },
           {
-            id: "black-bug",
-            label: "Big black bug",
-            text: "A big black bug bit a big black bear.",
+            id: "en-level-7-scheduling",
+            label: "Level 7 · Scheduling",
+            level: 7,
+            theme: "time",
+            text: "Can we meet on Tuesday at three? If not, I can shift to Wednesday morning after nine.",
           },
           {
-            id: "unique-new-york",
-            label: "Unique New York",
-            text:
-              "Unique New York, unique New York, you know you need unique New York.",
+            id: "en-level-8-story",
+            label: "Level 8 · Short story",
+            level: 8,
+            theme: "narration",
+            text: "I missed my train, but a kind stranger shared a map and showed me a quieter route home.",
           },
           {
-            id: "sleek-swans",
-            label: "Six sleek swans",
-            text: "Six sleek swans swam swiftly southwards.",
+            id: "en-level-9-opinion",
+            label: "Level 9 · Sharing an opinion",
+            level: 9,
+            theme: "opinions",
+            text: "Learning slowly is fine; steady practice builds confidence and keeps mistakes manageable.",
           },
           {
-            id: "irish-wristwatch",
-            label: "Irish wristwatch",
-            text: "Irish wristwatch, Swiss wristwatch.",
+            id: "en-level-10-work",
+            label: "Level 10 · Work update",
+            level: 10,
+            theme: "work",
+            text: "I finished the report, emailed the client, and scheduled a follow-up call for next week.",
           },
           {
-            id: "lorry",
-            label: "Red lorry, yellow lorry",
-            text: "Red lorry, yellow lorry, red lorry, yellow lorry.",
+            id: "en-level-11-problem",
+            label: "Level 11 · Solving a problem",
+            level: 11,
+            theme: "problem solving",
+            text: "The printer jammed, so I cleared the tray, restarted the device, and tried a single test page.",
           },
           {
-            id: "toy-boat",
-            label: "Toy boat",
-            text: "Toy boat, toy boat, toy boat, toy boat, toy boat.",
-          },
-          {
-            id: "fuzzy-wuzzy",
-            label: "Fuzzy Wuzzy",
-            text: "Fuzzy Wuzzy was a bear; Fuzzy Wuzzy had no hair.",
-          },
-          {
-            id: "proper-copper",
-            label: "Proper copper coffee pot",
-            text: "A proper copper coffee pot.",
-          },
-          {
-            id: "woodchuck",
-            label: "Woodchuck",
-            text: "How much wood would a woodchuck chuck if a woodchuck could chuck wood?",
-          },
-          {
-            id: "thirty-three",
-            label: "Thirty-three thousand",
-            text: "Thirty-three thousand feathers on a thrush's throat.",
+            id: "en-level-12-culture",
+            label: "Level 12 · Traditions",
+            level: 12,
+            theme: "culture",
+            text: "Every spring we cook a family recipe, decorate the table, and share stories late into the night.",
           },
         ],
         ca: [
           {
-            id: "ca-setze-jutges",
-            label: "Setze jutges",
-            text: "Setze jutges d'un jutjat mengen fetge d'un penjat.",
+            id: "ca-nivell-1-salutacions",
+            label: "Nivell 1 · Salutacions",
+            level: 1,
+            theme: "salutacions",
+            text: "Hola! Bon dia! Somric, saludo i dono les gràcies quan algú m'ajuda.",
           },
           {
-            id: "ca-plou-poc",
-            label: "Plou poc però prou",
-            text: "Plou poc però pel poc que plou plou prou.",
+            id: "ca-nivell-2-presentacio",
+            label: "Nivell 2 · Presentació",
+            level: 2,
+            theme: "presentacions",
+            text: "Em dic Laia i m'agrada aprendre idiomes i conèixer gent nova al barri.",
           },
           {
-            id: "ca-reina-riu",
-            label: "La reina que riu",
-            text: "La reina de les reines riu i fa riure als súbdits.",
+            id: "ca-nivell-3-rutina",
+            label: "Nivell 3 · Rutina diària",
+            level: 3,
+            theme: "vida quotidiana",
+            text: "Esmorzo tranquil·lament, miro l'agenda i faig una passejada curta abans de treballar.",
           },
           {
-            id: "ca-xai-xines",
-            label: "El xai xinès",
-            text: "El xai xinès és xinès i no pas de Xàtiva.",
+            id: "ca-nivell-4-cafeteria",
+            label: "Nivell 4 · A la cafeteria",
+            level: 4,
+            theme: "menjar",
+            text: "Bon dia! Voldria un cafè amb llet amb civada i una ensaïmada tèbia, si us plau.",
           },
           {
-            id: "ca-bruixes",
-            label: "Vuit bruixes",
-            text: "Vuit bruixes bruixetes bruixegen bruixeries.",
+            id: "ca-nivell-5-direccions",
+            label: "Nivell 5 · Preguntar per camins",
+            level: 5,
+            theme: "viatges",
+            text: "Perdoni, el museu és a prop? Necessito la parada que va cap al riu.",
+          },
+          {
+            id: "ca-nivell-6-capdesetmana",
+            label: "Nivell 6 · Cap de setmana",
+            level: 6,
+            theme: "oci",
+            text: "Aquest cap de setmana cuinaré per als amics, practicaré guitarra i descobriré un barri nou.",
+          },
+          {
+            id: "ca-nivell-7-agenda",
+            label: "Nivell 7 · Organitzar l'agenda",
+            level: 7,
+            theme: "temps",
+            text: "Podem quedar dimarts a les tres? Si no, puc passar-ho a dimecres al matí.",
+          },
+          {
+            id: "ca-nivell-8-historia",
+            label: "Nivell 8 · Petita història",
+            level: 8,
+            theme: "narració",
+            text: "Vaig perdre el tren, però una desconeguda em va donar un mapa i em va mostrar un camí més tranquil.",
+          },
+          {
+            id: "ca-nivell-9-opinio",
+            label: "Nivell 9 · Donar opinió",
+            level: 9,
+            theme: "opinions",
+            text: "Aprendre a poc a poc està bé; la pràctica constant dona seguretat i controla els errors.",
+          },
+          {
+            id: "ca-nivell-10-feina",
+            label: "Nivell 10 · Actualitzar feina",
+            level: 10,
+            theme: "feina",
+            text: "He acabat l'informe, he escrit al client i he programat una trucada per la setmana que ve.",
+          },
+          {
+            id: "ca-nivell-11-problema",
+            label: "Nivell 11 · Resoldre un problema",
+            level: 11,
+            theme: "solució",
+            text: "La impressora s'ha encallat; he buidat la safata, l'he reiniciada i he provat una sola pàgina.",
+          },
+          {
+            id: "ca-nivell-12-tradicions",
+            label: "Nivell 12 · Tradicions",
+            level: 12,
+            theme: "cultura",
+            text: "Cada primavera cuinem la recepta familiar, parem la taula i compartim històries fins tard.",
           },
         ],
         fr: [
           {
-            id: "fr-chasseur",
-            label: "Chasseur sans chien",
-            text: "Un chasseur sachant chasser sans son chien est un bon chasseur.",
+            id: "fr-niveau-1-saluer",
+            label: "Niveau 1 · Saluer",
+            level: 1,
+            theme: "salutations",
+            text: "Bonjour! Je souris, je dis merci et je serre la main quand je rencontre quelqu'un.",
           },
           {
-            id: "fr-archiduchesse",
-            label: "Chaussettes de l'archiduchesse",
-            text: "Les chaussettes de l'archiduchesse sont-elles sèches ? Archi-sèches.",
+            id: "fr-niveau-2-se-presenter",
+            label: "Niveau 2 · Se présenter",
+            level: 2,
+            theme: "presentations",
+            text: "Je m'appelle Claire. J'aime apprendre les langues et parler avec les voisins au marché.",
           },
           {
-            id: "fr-six-scies",
-            label: "Six scies scient",
-            text: "Si six scies scient six cyprès, six cents scies scient six cents cyprès.",
+            id: "fr-niveau-3-routine",
+            label: "Niveau 3 · Routine du matin",
+            level: 3,
+            theme: "vie quotidienne",
+            text: "Chaque matin je prépare un café, j'ouvre mon agenda et je fais une courte promenade.",
           },
           {
-            id: "fr-jasmin",
-            label: "Je veux du jasmin",
-            text: "Je veux et j'exige du jasmin et des jonquilles dans mon jardin.",
+            id: "fr-niveau-4-commande",
+            label: "Niveau 4 · Commander",
+            level: 4,
+            theme: "restaurant",
+            text: "Bonjour! Je voudrais un thé vert, un morceau de pain complet et un yaourt nature, s'il vous plaît.",
           },
           {
-            id: "fr-dragon",
-            label: "Dragon gradé",
-            text: "Un dragon gradé dégrade un dragon dégradé.",
+            id: "fr-niveau-5-directions",
+            label: "Niveau 5 · Demander son chemin",
+            level: 5,
+            theme: "voyage",
+            text: "Pardon, la bibliothèque est-elle loin? Je cherche l'arrêt de tram qui va vers le centre.",
+          },
+          {
+            id: "fr-niveau-6-sortie",
+            label: "Niveau 6 · Sortie du week-end",
+            level: 6,
+            theme: "loisirs",
+            text: "Ce week-end je cuisine pour mes amis, je lis au parc et je découvre une nouvelle pâtisserie.",
+          },
+          {
+            id: "fr-niveau-7-planifier",
+            label: "Niveau 7 · Planifier",
+            level: 7,
+            theme: "organisation",
+            text: "Peut-on se voir jeudi à quinze heures? Sinon je suis libre vendredi matin après neuf heures.",
+          },
+          {
+            id: "fr-niveau-8-recits",
+            label: "Niveau 8 · Petit récit",
+            level: 8,
+            theme: "récit",
+            text: "J'ai raté le bus, mais une personne m'a indiqué une rue calme qui mène directement à la maison.",
+          },
+          {
+            id: "fr-niveau-9-avis",
+            label: "Niveau 9 · Donner un avis",
+            level: 9,
+            theme: "opinion",
+            text: "Progresser lentement me convient: la régularité renforce la confiance et limite les erreurs.",
+          },
+          {
+            id: "fr-niveau-10-travail",
+            label: "Niveau 10 · Nouvelles du travail",
+            level: 10,
+            theme: "travail",
+            text: "J'ai terminé le dossier, averti le client et fixé un point de suivi pour la semaine prochaine.",
+          },
+          {
+            id: "fr-niveau-11-solution",
+            label: "Niveau 11 · Chercher une solution",
+            level: 11,
+            theme: "résolution",
+            text: "L'ordinateur a bloqué, j'ai redémarré lentement, vérifié les câbles et relancé seulement un programme.",
+          },
+          {
+            id: "fr-niveau-12-coutumes",
+            label: "Niveau 12 · Coutumes",
+            level: 12,
+            theme: "culture",
+            text: "Au printemps, nous préparons un plat familial, décorons la table et racontons des souvenirs tard le soir.",
           },
         ],
         it: [
           {
-            id: "it-trentini",
-            label: "Trentatré trentini",
-            text: "Trentatré trentini entrarono a Trento tutti e trentatré trotterellando.",
+            id: "it-livello-1-saluti",
+            label: "Livello 1 · Saluti",
+            level: 1,
+            theme: "saluti",
+            text: "Ciao! Buongiorno! Saluto con un sorriso e ringrazio quando qualcuno mi aiuta.",
           },
           {
-            id: "it-apelle",
-            label: "Apelle figlio di Apollo",
-            text: "Apelle figlio di Apollo fece una palla di pelle di pollo.",
+            id: "it-livello-2-presentarsi",
+            label: "Livello 2 · Presentarsi",
+            level: 2,
+            theme: "presentazioni",
+            text: "Mi chiamo Marco. Mi piace studiare le lingue e parlare con i vicini al mercato.",
           },
           {
-            id: "it-capra-panca",
-            label: "Capra e panca",
-            text: "Sopra la panca la capra campa, sotto la panca la capra crepa.",
+            id: "it-livello-3-routine",
+            label: "Livello 3 · Routine mattutina",
+            level: 3,
+            theme: "vita quotidiana",
+            text: "Ogni mattina preparo un caffè leggero, controllo l'agenda e faccio una passeggiata breve.",
           },
           {
-            id: "it-arcivescovo",
-            label: "Arcivescovo di Costantinopoli",
-            text: "Se l'arcivescovo di Costantinopoli si disarcivescoviscostantinopolizzasse, vi disarcivescoviscostantinopolizzereste voi?",
+            id: "it-livello-4-bar",
+            label: "Livello 4 · Ordinare al bar",
+            level: 4,
+            theme: "cibo",
+            text: "Buongiorno! Vorrei un cappuccino con latte di avena e una focaccia calda, per favore.",
           },
           {
-            id: "it-tre-tigri",
-            label: "Tre tigri",
-            text: "Tre tigri contro tre tigri.",
+            id: "it-livello-5-strada",
+            label: "Livello 5 · Chiedere indicazioni",
+            level: 5,
+            theme: "viaggio",
+            text: "Scusi, la stazione è vicina? Cerco l'autobus che va verso il fiume.",
+          },
+          {
+            id: "it-livello-6-weekend",
+            label: "Livello 6 · Progetti del weekend",
+            level: 6,
+            theme: "tempo libero",
+            text: "Questo weekend cucino per gli amici, provo nuovi accordi di chitarra e visito un museo gratuito.",
+          },
+          {
+            id: "it-livello-7-agenda",
+            label: "Livello 7 · Pianificare",
+            level: 7,
+            theme: "organizzazione",
+            text: "Possiamo vederci martedì alle tre? In alternativa, sono disponibile giovedì mattina.",
+          },
+          {
+            id: "it-livello-8-racconto",
+            label: "Livello 8 · Breve racconto",
+            level: 8,
+            theme: "racconto",
+            text: "Ho perso il tram, ma una persona gentile mi ha mostrato una strada tranquilla verso casa.",
+          },
+          {
+            id: "it-livello-9-parere",
+            label: "Livello 9 · Esprimere un parere",
+            level: 9,
+            theme: "opinioni",
+            text: "Studiare con calma va bene: la costanza crea sicurezza e riduce gli errori.",
+          },
+          {
+            id: "it-livello-10-lavoro",
+            label: "Livello 10 · Aggiornamento di lavoro",
+            level: 10,
+            theme: "lavoro",
+            text: "Ho completato il report, ho scritto al cliente e ho fissato una chiamata per la prossima settimana.",
+          },
+          {
+            id: "it-livello-11-soluzione",
+            label: "Livello 11 · Risolvere",
+            level: 11,
+            theme: "problemi",
+            text: "Il tablet si è bloccato; l'ho riavviato, ho liberato spazio e ho riaperto solo l'app necessaria.",
+          },
+          {
+            id: "it-livello-12-tradizione",
+            label: "Livello 12 · Tradizione",
+            level: 12,
+            theme: "cultura",
+            text: "A primavera cuciniamo un piatto di famiglia, apparecchiamo insieme e raccontiamo storie fino a tardi.",
           },
         ],
         ar: [
           {
-            id: "ar-khams-khubzat",
-            label: "خمس خبزات",
-            text: "خمس خبزات خَبَزْنَ في فرن خباز.",
+            id: "ar-level-1-greetings",
+            label: "المستوى ١ · تحيات",
+            level: 1,
+            theme: "تحيات",
+            text: "مرحبًا! أقول أهلًا وأشكر من يساعدني بابتسامة بسيطة.",
           },
           {
-            id: "ar-sharh",
-            label: "شر شارح",
-            text: "شر شارح شرح شرحًا غير مشروح.",
+            id: "ar-level-2-intro",
+            label: "المستوى ٢ · تقديم النفس",
+            level: 2,
+            theme: "تعارف",
+            text: "اسمي ليلى. أحب تعلّم اللغات والتحدث مع الجيران قرب السوق.",
           },
           {
-            id: "ar-batatuna",
-            label: "بطتنا بطت",
-            text: "بطتنا بطت بطتكم، بطتكم بطت بطتنا.",
+            id: "ar-level-3-routine",
+            label: "المستوى ٣ · روتين الصباح",
+            level: 3,
+            theme: "يوميات",
+            text: "أعد فطورًا خفيفًا، أراجع مواعيدي، وأتمشى قليلًا قبل العمل.",
           },
           {
-            id: "ar-tabaq",
-            label: "طبق طبقنا",
-            text: "طبق طبقنا طبقا لا يطبق.",
+            id: "ar-level-4-cafe",
+            label: "المستوى ٤ · طلب في المقهى",
+            level: 4,
+            theme: "طعام",
+            text: "مساء الخير! أريد قهوة بالحليب النباتي وقطعة خبز دافئة، من فضلك.",
           },
           {
-            id: "ar-sara",
-            label: "سر سارا",
-            text: "سر سارا أسرع من سر سارة.",
+            id: "ar-level-5-direction",
+            label: "المستوى ٥ · سؤال عن الطريق",
+            level: 5,
+            theme: "سفر",
+            text: "عذرًا، هل المتحف قريب؟ أبحث عن موقف الحافلة المتجهة نحو النهر.",
+          },
+          {
+            id: "ar-level-6-weekend",
+            label: "المستوى ٦ · خطط نهاية الأسبوع",
+            level: 6,
+            theme: "اجتماعي",
+            text: "سأطبخ للأصدقاء، أتدرب على الغناء، وأزور حديقة جديدة هذا الأسبوع.",
+          },
+          {
+            id: "ar-level-7-schedule",
+            label: "المستوى ٧ · تنسيق المواعيد",
+            level: 7,
+            theme: "وقت",
+            text: "هل يناسبك الأربعاء الساعة الرابعة؟ إن تعذر، يمكنني الحضور صباح الخميس.",
+          },
+          {
+            id: "ar-level-8-story",
+            label: "المستوى ٨ · حكاية قصيرة",
+            level: 8,
+            theme: "حكاية",
+            text: "فاتتني الحافلة لكن شخصًا طيبًا أعطاني خريطة ودلّني على طريق أهدأ للمنزل.",
+          },
+          {
+            id: "ar-level-9-opinion",
+            label: "المستوى ٩ · إبداء رأي",
+            level: 9,
+            theme: "آراء",
+            text: "التقدم البطيء جيد؛ المران اليومي يزيد الثقة ويقلل الأخطاء.",
+          },
+          {
+            id: "ar-level-10-work",
+            label: "المستوى ١٠ · تحديث العمل",
+            level: 10,
+            theme: "عمل",
+            text: "أنهيت التقرير، أرسلت البريد للعميل، وحددت اتصال متابعة الأسبوع القادم.",
+          },
+          {
+            id: "ar-level-11-repair",
+            label: "المستوى ١١ · حل مشكلة",
+            level: 11,
+            theme: "حلول",
+            text: "توقف الهاتف، فأعدت تشغيله، حذفت بعض الملفات، وجربت التطبيق مرة أخرى بهدوء.",
+          },
+          {
+            id: "ar-level-12-tradition",
+            label: "المستوى ١٢ · عادة عائلية",
+            level: 12,
+            theme: "ثقافة",
+            text: "في الربيع نطهو وصفة العائلة، نزيّن المائدة، ونسهر لنحكي ذكريات قديمة.",
           },
         ],
+      };
       };
 
       function getPracticeLanguage() {
@@ -2377,6 +2874,107 @@
         return PRESET_PARAGRAPHS[practiceLanguage] || PRESET_PARAGRAPHS.en;
       }
 
+      function getAvailableLevels() {
+        const preset = getPresetParagraphs();
+        return Array.from(
+          new Set(
+            preset
+              .map((entry) => entry.level)
+              .filter((level) => Number.isFinite(level)),
+          ),
+        ).sort((a, b) => a - b);
+      }
+
+      function getAvailableThemes() {
+        const preset = getPresetParagraphs();
+        return Array.from(
+          new Set(
+            preset
+              .map((entry) => entry.theme)
+              .filter((theme) => typeof theme === "string" && theme.trim()),
+          ),
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      }
+
+      function getFilteredPresetParagraphs() {
+        const preset = getPresetParagraphs();
+        return preset
+          .filter((entry) => {
+            const passesLevel =
+              selectedLevelFilter === "all" || entry.level === Number(selectedLevelFilter);
+            const passesTheme =
+              selectedThemeFilter === "all" || entry.theme === selectedThemeFilter;
+            return passesLevel && passesTheme;
+          })
+          .sort((a, b) => {
+            const levelCompare = (a.level || 0) - (b.level || 0);
+            if (levelCompare !== 0) return levelCompare;
+            return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+          });
+      }
+
+      function populateLevelFilterOptions() {
+        if (!levelFilterSelect) {
+          return;
+        }
+        const levels = getAvailableLevels();
+        levelFilterSelect.innerHTML = "";
+        const allOption = document.createElement("option");
+        allOption.value = "all";
+        allOption.textContent = t("levelAll");
+        levelFilterSelect.append(allOption);
+        levels.forEach((level) => {
+          const option = document.createElement("option");
+          option.value = String(level);
+          option.textContent = t("practiceMeta", level, "");
+          levelFilterSelect.append(option);
+        });
+        if (!levels.includes(Number(selectedLevelFilter))) {
+          selectedLevelFilter = "all";
+        }
+        levelFilterSelect.value = String(selectedLevelFilter);
+      }
+
+      function populateThemeFilterOptions() {
+        if (!themeFilterSelect) {
+          return;
+        }
+        const themes = getAvailableThemes();
+        themeFilterSelect.innerHTML = "";
+        const allOption = document.createElement("option");
+        allOption.value = "all";
+        allOption.textContent = t("themeAll");
+        themeFilterSelect.append(allOption);
+        themes.forEach((theme) => {
+          const option = document.createElement("option");
+          option.value = theme;
+          option.textContent = theme;
+          themeFilterSelect.append(option);
+        });
+        if (!themes.includes(selectedThemeFilter)) {
+          selectedThemeFilter = "all";
+        }
+        themeFilterSelect.value = selectedThemeFilter;
+      }
+
+      function navigateLevel(direction = 1) {
+        const preset = getFilteredPresetParagraphs();
+        if (!paragraphSelect || !preset.length) {
+          return;
+        }
+        const currentId = paragraphSelect.value;
+        const currentIndex = preset.findIndex((entry) => entry.id === currentId);
+        const targetIndex =
+          currentIndex === -1
+            ? 0
+            : Math.min(Math.max(currentIndex + direction, 0), preset.length - 1);
+        const nextEntry = preset[targetIndex];
+        if (nextEntry) {
+          paragraphSelect.value = nextEntry.id;
+          displaySelectedParagraph();
+        }
+      }
+
       let isListening = false;
       let isProcessing = false;
       let mediaRecorder = null;
@@ -2389,11 +2987,13 @@
       let activeParagraphId = null;
       let allowWordPlayback = false;
       let hasShownSuccessCelebration = false;
+      let selectedLevelFilter = "all";
+      let selectedThemeFilter = "all";
 
       const API_ENDPOINT = "/api/transcribe";
 
       function rebuildParagraphOptions(selectedId = CUSTOM_OPTION_ID) {
-        const presetParagraphs = getPresetParagraphs();
+        const presetParagraphs = getFilteredPresetParagraphs();
         paragraphSelect.innerHTML = "";
         customEntries.forEach((entry) => {
           const option = document.createElement("option");
@@ -2428,16 +3028,24 @@
       }
 
       function populateParagraphs() {
+        populateLevelFilterOptions();
+        populateThemeFilterOptions();
         rebuildParagraphOptions(CUSTOM_OPTION_ID);
         activeParagraphId = CUSTOM_OPTION_ID;
         renderParagraph("");
         resetResultDisplay();
         hideSupportMessage();
+        updateSavedCustomListSummary();
+        if (customTitleInput) {
+          customTitleInput.value = customEntries[0]?.title || customEntries[0]?.label || "";
+        }
       }
 
       function handlePracticeLanguageChange() {
         const currentSelection = paragraphSelect?.value || CUSTOM_OPTION_ID;
-        const presetParagraphs = getPresetParagraphs();
+        populateLevelFilterOptions();
+        populateThemeFilterOptions();
+        const presetParagraphs = getFilteredPresetParagraphs();
         let nextSelection = currentSelection;
         if (
           !isCustomParagraphId(currentSelection) &&
@@ -2478,18 +3086,79 @@
         customTexts.set(id, value || "");
       }
 
+      function updateSavedCustomListSummary() {
+        if (!customSavedList) {
+          return;
+        }
+        const names = customEntries
+          .filter((entry) => entry.type === "saved")
+          .map((entry) => entry.label)
+          .filter(Boolean);
+        customSavedList.textContent = t("customSavedListLabel", names);
+      }
+
       function addAnotherCustomEntry() {
         customEntryCount += 1;
         const id = `${CUSTOM_OPTION_ID}-${customEntryCount}`;
-        const entry = createCustomEntry(id, "saved", customEntryCount);
+        const defaultTitle =
+          (customTitleInput?.value || "").trim() ||
+          t("customNumberedLabel", customEntryCount);
+        const entry = createCustomEntry(
+          id,
+          "saved",
+          customEntries.length + 1,
+          defaultTitle,
+        );
         customEntries.push(entry);
         setCustomText(id, "");
+        persistCustomTextStore(customEntries, customTexts);
         rebuildParagraphOptions(id);
         activeParagraphId = id;
         hideSupportMessage();
         resetResultDisplay();
         renderParagraph("");
+        updateSavedCustomListSummary();
+        if (customTitleInput) {
+          customTitleInput.value = entry.title || entry.label;
+        }
         customTextInput.focus();
+      }
+
+      function saveCurrentCustomText() {
+        const providedTitle = (customTitleInput?.value || "").trim();
+        const activeId = paragraphSelect?.value || CUSTOM_OPTION_ID;
+        const textValue = getActivePracticeText();
+        let targetId = activeId;
+
+        if (!isCustomParagraphId(activeId)) {
+          customEntryCount += 1;
+          targetId = `${CUSTOM_OPTION_ID}-${customEntryCount}`;
+          const entry = createCustomEntry(
+            targetId,
+            "saved",
+            customEntries.length + 1,
+            providedTitle || t("customNumberedLabel", customEntryCount),
+          );
+          customEntries.push(entry);
+        } else {
+          const entry = getCustomEntryById(activeId);
+          if (entry && providedTitle) {
+            entry.title = providedTitle;
+          }
+          const numericId = Number.parseInt(activeId.split("-").pop(), 10);
+          if (Number.isInteger(numericId)) {
+            customEntryCount = Math.max(customEntryCount, numericId);
+          }
+        }
+
+        setCustomText(targetId, textValue);
+        persistCustomTextStore(customEntries, customTexts);
+        rebuildParagraphOptions(targetId);
+        activeParagraphId = targetId;
+        hideSupportMessage();
+        resetResultDisplay();
+        displaySelectedParagraph();
+        updateSavedCustomListSummary();
       }
 
       function createEmptyStatus() {
@@ -2707,6 +3376,8 @@
             id: customEntry.id,
             label: customEntry.label,
             text: getCustomTextRaw(customEntry.id),
+            level: null,
+            theme: null,
           };
         }
 
@@ -2718,7 +3389,21 @@
           id: CUSTOM_OPTION_ID,
           label: customEntries[0]?.label || "Custom text",
           text: getCustomTextRaw(CUSTOM_OPTION_ID),
+          level: null,
+          theme: null,
         };
+      }
+
+      function updatePracticeMeta(selected) {
+        if (!practiceMeta) {
+          return;
+        }
+        if (!selected || isCustomParagraphId(selected.id)) {
+          practiceMeta.textContent = "";
+          return;
+        }
+        const metaText = t("practiceMeta", selected.level, selected.theme);
+        practiceMeta.textContent = metaText || "";
       }
 
       function displaySelectedParagraph() {
@@ -2729,6 +3414,15 @@
             ? getCustomTextRaw(selected.id)
             : selected.text;
         renderParagraph(textToShow || "");
+        updatePracticeMeta(selected);
+        if (customTitleInput) {
+          if (isCustomParagraphId(selected.id)) {
+            const entry = getCustomEntryById(selected.id);
+            customTitleInput.value = entry?.title || entry?.label || "";
+          } else {
+            customTitleInput.value = selected.label || "";
+          }
+        }
       }
 
       function normaliseTranscript(text) {
@@ -3681,10 +4375,27 @@
         resetResultDisplay();
       });
 
+      if (levelFilterSelect) {
+        levelFilterSelect.addEventListener("change", () => {
+          selectedLevelFilter = levelFilterSelect.value || "all";
+          rebuildParagraphOptions(paragraphSelect.value);
+          displaySelectedParagraph();
+        });
+      }
+
+      if (themeFilterSelect) {
+        themeFilterSelect.addEventListener("change", () => {
+          selectedThemeFilter = themeFilterSelect.value || "all";
+          rebuildParagraphOptions(paragraphSelect.value);
+          displaySelectedParagraph();
+        });
+      }
+
       customTextInput.addEventListener("input", () => {
         const activeId = activeParagraphId || paragraphSelect.value;
         if (!isCustomParagraphId(activeId)) return;
         setCustomText(activeId, customTextInput.textContent);
+        persistCustomTextStore(customEntries, customTexts);
         hideSupportMessage();
         resetResultDisplay();
       });
@@ -3857,8 +4568,20 @@
         historyListEl.addEventListener("keydown", handleHistoryListKeydown);
       }
 
+      if (saveCustomTextButton) {
+        saveCustomTextButton.addEventListener("click", saveCurrentCustomText);
+      }
+
       if (addCustomTextButton) {
         addCustomTextButton.addEventListener("click", addAnotherCustomEntry);
+      }
+
+      if (previousLevelButton) {
+        previousLevelButton.addEventListener("click", () => navigateLevel(-1));
+      }
+
+      if (nextLevelButton) {
+        nextLevelButton.addEventListener("click", () => navigateLevel(1));
       }
 
       if (playTextButton) {

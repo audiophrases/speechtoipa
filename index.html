@@ -2981,10 +2981,16 @@
         supportMessage.textContent = message;
         supportMessage.classList.remove("hidden");
 
-        if (
-          typeof message === "string" &&
-          message.trim().toLowerCase().startsWith("success")
-        ) {
+        if (typeof message !== "string") {
+          return;
+        }
+
+        const normalizedMessage = message
+          .trim()
+          .replace(/^[^a-z0-9]+/i, "")
+          .toLowerCase();
+
+        if (normalizedMessage.startsWith("success")) {
           showSuccessCelebration();
         }
       }

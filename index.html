@@ -2980,6 +2980,13 @@
       function showSupportMessage(message) {
         supportMessage.textContent = message;
         supportMessage.classList.remove("hidden");
+
+        if (
+          typeof message === "string" &&
+          message.trim().toLowerCase().startsWith("success")
+        ) {
+          showSuccessCelebration();
+        }
       }
 
       function hideSupportMessage() {

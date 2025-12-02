@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Speech to IPA - Browser Practice</title>
+  <title>Read • Listen • Speak</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header>
-    <h1>Language Practice (Browser Only)</h1>
-    <p class="tagline">Listen, speak, and get instant feedback without servers or paid APIs.</p>
+    <h1>Read • Listen • Speak</h1>
+    <p class="tagline">Practice reading, listening and pronunciation step by step.</p>
   </header>
 
   <section class="settings" aria-label="Language selection">
@@ -40,17 +40,6 @@
     <div id="transcript" class="transcript" aria-live="polite"></div>
     <div id="feedback" class="feedback" aria-live="polite"></div>
   </main>
-
-  <section class="notes card">
-    <h2>How this works</h2>
-    <ul>
-      <li>Everything runs in your browser using the Web Speech API.</li>
-      <li>No servers, no paid APIs, and lessons come from static JSON files.</li>
-      <li>Hover or tap words to see translations in your base language.</li>
-      <li>Your language choices and progress are stored locally in your browser.</li>
-    </ul>
-    <p class="small">Add new lessons by dropping JSON files into <code>/data</code>. The filename should follow <code>{lang}_a1_introductions.json</code> style and include <code>lang</code>, <code>level</code>, <code>theme</code>, and <code>sentences</code> fields.</p>
-  </section>
 
   <script src="app.js"></script>
 </body>

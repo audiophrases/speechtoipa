@@ -3,7 +3,7 @@ const TARGET_LANGS = [
   { code: 'en', label: 'English' },
   { code: 'ca', label: 'Catalan' },
   { code: 'it', label: 'Italian' },
-  { code: 'ar', label: 'Arabic (Darija friendly)' }
+  { code: 'ary', label: 'Moroccan Darija' }
 ];
 
 const BASE_LANGS = [
@@ -19,6 +19,11 @@ const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
+
+let wordSpans = [];
+let targetTokens = [];
+let lastTranscript = '';
+let currentSentenceText = '';
 
 const state = {
   targetLang: 'fr',
@@ -199,14 +204,29 @@ function loadProgressForLesson() {
 function renderCurrentSentence() {
   if (!state.sentences.length) return;
   const sentence = currentSentence();
-  els.sentence.innerHTML = '';
-  sentence.tokens.forEach((token) => {
+  const sentenceEl = els.sentence;
+  sentenceEl.innerHTML = '';
+  wordSpans = [];
+  currentSentenceText = sentence.text;
+  targetTokens = tokenize(currentSentenceText);
+
+  sentence.tokens.forEach((tokenObj) => {
     const span = document.createElement('span');
-    span.textContent = token.surface + ' ';
-    span.className = 'word';
-    const translation = token.translations?.[state.baseLang] || '—';
-    span.dataset.translation = translation;
-    els.sentence.appendChild(span);
+    span.textContent = `${tokenObj.surface || tokenObj.text || ''} `;
+    span.classList.add('word', 'word-pending');
+
+    const translation = tokenObj.translations?.[state.baseLang];
+    if (translation) {
+      span.title = translation;
+      span.dataset.translation = translation;
+    }
+
+    if (tokenObj.latin) {
+      span.dataset.latin = tokenObj.latin;
+    }
+
+    wordSpans.push(span);
+    sentenceEl.appendChild(span);
   });
   els.feedback.textContent = '';
   els.transcript.textContent = '';
@@ -234,7 +254,7 @@ function getLangCode(l2) {
       return 'ca-ES';
     case 'it':
       return 'it-IT';
-    case 'ar':
+    case 'ary':
       return 'ar-MA';
     default:
       return 'en-US';
@@ -257,27 +277,49 @@ function speakCurrent(rate = 1) {
 
 function initRecognition() {
   if (!state.supportsRecognition) return;
+  if (state.recognition) {
+    state.recognition.abort();
+  }
+
   state.recognition = new SpeechRecognition();
   state.recognition.lang = getLangCode(state.targetLang);
-  state.recognition.interimResults = false;
+  state.recognition.continuous = true;
+  state.recognition.interimResults = true;
   state.recognition.maxAlternatives = 1;
+
   state.recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    els.transcript.textContent = `You said: ${transcript}`;
-    handleUserTranscript(transcript);
-    state.recording = false;
+    let transcript = '';
+
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript + ' ';
+    }
+
+    transcript = transcript.trim();
+    lastTranscript = transcript;
+    updateLiveFeedback(transcript);
+  };
+
+  state.recognition.onstart = () => {
+    state.recording = true;
+    setStatus('Listening...');
     updateRecordState();
   };
+
   state.recognition.onerror = (event) => {
     console.error('Recognition error', event.error);
     setStatus(`Recognition error: ${event.error}`);
     state.recording = false;
     updateRecordState();
   };
+
   state.recognition.onend = () => {
     state.recording = false;
     updateRecordState();
+    if (lastTranscript !== null) {
+      finalizeScore(lastTranscript);
+    }
   };
+
   updateRecordState();
 }
 
@@ -288,10 +330,15 @@ function startRecording() {
   }
   if (!state.recognition) initRecognition();
   try {
+    lastTranscript = '';
+    els.transcript.textContent = '';
+    els.feedback.textContent = '';
+    wordSpans.forEach((span) => {
+      span.classList.remove('word-correct', 'word-wrong', 'word-pending');
+      span.classList.add('word-pending');
+    });
+    state.recognition.lang = getLangCode(state.targetLang);
     state.recognition.start();
-    state.recording = true;
-    setStatus('Listening...');
-    updateRecordState();
   } catch (err) {
     console.error('Failed to start recognition', err);
     setStatus('Could not start recording.');
@@ -300,6 +347,7 @@ function startRecording() {
 
 function stopRecording() {
   if (state.recording && state.recognition) {
+    setStatus('Stopping...');
     state.recognition.stop();
   }
 }
@@ -312,84 +360,81 @@ function updateRecordState() {
   }
 }
 
-function normalizeText(t) {
-  return t
+function tokenize(text) {
+  return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/\p{Diacritic}+/gu, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[.,!?;:]/g, '')
-    .trim();
-}
-
-function tokenize(t) {
-  return normalizeText(t)
+    .trim()
     .split(/\s+/)
     .filter(Boolean);
 }
 
-function levenshtein(a, b) {
-  const m = a.length;
-  const n = b.length;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
+function isSimilar(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 2) return false;
+  return a[0] === b[0];
+}
+
+function updateLiveFeedback(transcript) {
+  const spokenTokens = tokenize(transcript);
+  const relevantTokens = spokenTokens.slice(-targetTokens.length);
+  const n = targetTokens.length;
+  const m = relevantTokens.length;
+
+  let correctPrefix = 0;
+
+  while (
+    correctPrefix < n &&
+    correctPrefix < m &&
+    isSimilar(targetTokens[correctPrefix], relevantTokens[correctPrefix])
+  ) {
+    correctPrefix++;
+  }
+
+  wordSpans.forEach((span) => {
+    span.classList.remove('word-correct', 'word-wrong', 'word-pending');
+  });
+
+  for (let i = 0; i < n; i++) {
+    if (i < correctPrefix) {
+      wordSpans[i]?.classList.add('word-correct');
+    } else if (i === correctPrefix && i < m) {
+      wordSpans[i]?.classList.add('word-wrong');
+    } else {
+      wordSpans[i]?.classList.add('word-pending');
     }
   }
-  return dp[m][n];
+
+  if (els.transcript) {
+    els.transcript.textContent = transcript;
+  }
 }
 
-function compareTokens(targetTokens, userTokens) {
-  const statuses = [];
-  targetTokens.forEach((target, idx) => {
-    const user = userTokens[idx];
-    if (!user) {
-      statuses.push('miss');
-      return;
-    }
-    if (target === user) {
-      statuses.push('ok');
-      return;
-    }
-    const distance = levenshtein(target, user);
-    statuses.push(distance <= 1 ? 'approx' : 'miss');
-  });
-  const correctCount = statuses.filter((s) => s === 'ok').length;
-  const approxCount = statuses.filter((s) => s === 'approx').length;
-  const score = Math.round(((correctCount + approxCount * 0.5) / targetTokens.length) * 100);
-  return { statuses, score };
-}
+function finalizeScore(transcript) {
+  const spokenTokens = tokenize(transcript).slice(-targetTokens.length);
+  let correct = 0;
 
-function handleUserTranscript(transcript) {
-  const targetTokens = tokenize(currentSentence().text);
-  const userTokens = tokenize(transcript);
-  const { statuses, score } = compareTokens(targetTokens, userTokens);
-  colorizeWords(statuses);
-  const message = score >= 80
-    ? 'Great!'
-    : score >= 50
-      ? 'Good, a few words need work.'
-      : "Let\'s try again. Use the slow button if needed.";
-  els.feedback.textContent = `Score: ${score}%. ${message}`;
+  for (let i = 0; i < targetTokens.length && i < spokenTokens.length; i++) {
+    if (isSimilar(targetTokens[i], spokenTokens[i])) {
+      correct++;
+    }
+  }
+
+  const score = Math.round((correct / (targetTokens.length || 1)) * 100);
+  const feedbackEl = els.feedback;
+  if (!feedbackEl) return;
+
+  if (score >= 80) {
+    feedbackEl.textContent = `Great! Score: ${score}%`;
+  } else if (score >= 50) {
+    feedbackEl.textContent = `Good effort! Score: ${score}%. Try to fix the red words.`;
+  } else {
+    feedbackEl.textContent = `Let's try again. Score: ${score}%. Focus on the first few words.`;
+  }
+
   saveProgress(score);
-}
-
-function colorizeWords(statuses) {
-  const spans = [...els.sentence.querySelectorAll('.word')];
-  spans.forEach((span, idx) => {
-    span.classList.remove('word-ok', 'word-approx', 'word-miss');
-    const status = statuses[idx];
-    if (status === 'ok') span.classList.add('word-ok');
-    if (status === 'approx') span.classList.add('word-approx');
-    if (status === 'miss') span.classList.add('word-miss');
-  });
 }
 
 function setStatus(text) {

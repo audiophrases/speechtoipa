@@ -165,20 +165,18 @@ button.secondary {
   transform: translate(-50%, -4px);
 }
 
-.word-ok {
-  background: rgba(52, 211, 153, 0.12);
-  color: var(--text);
-  border-bottom: 2px solid var(--success);
+.word-correct {
+  color: #0a7f2e;
+  font-weight: 600;
 }
 
-.word-approx {
-  background: rgba(251, 191, 36, 0.16);
-  border-bottom: 2px solid var(--warn);
+.word-wrong {
+  color: #b00020;
+  font-weight: 600;
 }
 
-.word-miss {
-  background: rgba(248, 113, 113, 0.12);
-  border-bottom: 2px solid var(--error);
+.word-pending {
+  color: #9ca3af;
 }
 
 .notes ul {

@@ -118,6 +118,11 @@ button.secondary {
   direction: rtl;
 }
 
+.word[dir="rtl"] {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
 .controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

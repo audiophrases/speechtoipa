@@ -26,8 +26,6 @@ let targetTokens = [];
 let lastTranscript = '';
 let currentSentenceText = '';
 let wordStatus = [];
-let lastOrderedIndex = -1;
-
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -230,7 +228,7 @@ function renderCurrentSentence() {
   sentenceEl.innerHTML = '';
   wordSpans = [];
   currentSentenceText = sentence.text;
-  targetTokens = tokenize(currentSentenceText);
+  targetTokens = tokenizeText(currentSentenceText);
 
   sentence.tokens.forEach((tokenObj) => {
     const span = document.createElement('span');
@@ -389,30 +387,102 @@ function updateRecordState() {
   }
 }
 
-function normalizeText(t) {
-  return t
+function normalizeWord(w) {
+  if (!w) return '';
+  return w
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[.,!?;:]/g, '')
+    .replace(/[.,!?;:;()"«»¿¡]/g, '')
     .trim();
 }
 
-function tokenize(text) {
-  return normalizeText(text)
+function tokenizeText(t) {
+  return normalizeWord(t)
     .split(/\s+/)
     .filter(Boolean);
 }
 
-function isSimilar(a, b) {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (Math.abs(a.length - b.length) > 2) return false;
-  return a[0] === b[0];
+function levenshtein(a, b) {
+  const n = a.length;
+  const m = b.length;
+  if (n === 0) return m;
+  if (m === 0) return n;
+
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 0; i <= n; i++) dp[i][0] = i;
+  for (let j = 0; j <= m; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[n][m];
+}
+
+const EQUIV_GROUPS = {
+  em: ['em', 'amb', 'en'],
+  amb: ['em', 'amb', 'en'],
+};
+
+function similarityScore(rawTarget, rawCandidate) {
+  const target = normalizeWord(rawTarget);
+  const cand = normalizeWord(rawCandidate);
+  if (!target || !cand) return 0;
+
+  if (target === cand) return 1;
+
+  const equiv = EQUIV_GROUPS[target];
+  if (equiv && equiv.includes(cand)) {
+    return 0.95;
+  }
+
+  const dist = levenshtein(target, cand);
+  const maxLen = Math.max(target.length, cand.length);
+  const normDist = maxLen === 0 ? 0 : dist / maxLen;
+  return 1 - normDist;
+}
+
+function findMatchesForTargetTokens(targetTokens, spokenTokens) {
+  const matches = new Array(targetTokens.length).fill(null);
+  const usedUntil = { value: 0 };
+
+  const S = spokenTokens.length;
+  const MAX_WINDOW = 3;
+
+  for (let i = 0; i < targetTokens.length; i++) {
+    const target = targetTokens[i];
+    let best = null;
+
+    for (let start = usedUntil.value; start < S; start++) {
+      for (let end = start; end < Math.min(S, start + MAX_WINDOW); end++) {
+        const windowTokens = spokenTokens.slice(start, end + 1);
+        const concatenated = normalizeWord(windowTokens.join(''));
+        const score = similarityScore(target, concatenated);
+        if (!best || score > best.score) {
+          best = { start, end, score };
+        }
+      }
+    }
+
+    if (best && best.score >= 0.7) {
+      matches[i] = best;
+      usedUntil.value = best.end + 1;
+    } else {
+      matches[i] = null;
+    }
+  }
+
+  return matches;
 }
 
 function resetSentenceState() {
-  lastOrderedIndex = -1;
   lastTranscript = '';
   wordStatus = targetTokens.map(() => 'pending');
   updateWordSpanClasses();
@@ -428,14 +498,14 @@ function updateWordSpanClasses() {
   });
 }
 
-function checkIfSentenceComplete() {
-  if (wordStatus.every((s) => s === 'correct')) {
-    if (state.recognition) {
-      try {
-        state.recognition.stop();
-      } catch (e) {
-        // ignore
-      }
+function checkIfSentenceCompleteAndStop() {
+  if (!wordStatus.length) return;
+  const allCorrect = wordStatus.every((s) => s === 'correct');
+  if (allCorrect && state.recognition) {
+    try {
+      state.recognition.stop();
+    } catch (e) {
+      // ignore
     }
     const feedbackEl = document.getElementById('feedback');
     if (feedbackEl) {
@@ -446,38 +516,26 @@ function checkIfSentenceComplete() {
 }
 
 function updateLiveFeedback(transcript) {
-  const spokenTokens = tokenize(transcript);
+  const spokenTokens = tokenizeText(transcript);
+  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens);
+  const prevStatus = [...wordStatus];
   const n = targetTokens.length;
 
-  const prevStatus = [...wordStatus];
   wordStatus = targetTokens.map(() => 'pending');
 
   for (let i = 0; i < n; i++) {
-    const target = targetTokens[i];
-    let found = false;
-    for (let j = 0; j < spokenTokens.length; j++) {
-      if (isSimilar(target, spokenTokens[j])) {
-        found = true;
-        break;
-      }
-    }
-    if (found) {
+    if (matches[i]) {
       wordStatus[i] = 'correct';
     }
   }
 
   let firstNotCorrect = -1;
-  let orderedPrefix = 0;
   for (let i = 0; i < n; i++) {
     if (wordStatus[i] !== 'correct') {
       firstNotCorrect = i;
       break;
     }
-    orderedPrefix++;
   }
-
-  lastOrderedIndex = orderedPrefix - 1;
-
   if (firstNotCorrect !== -1) {
     wordStatus[firstNotCorrect] = 'wrong';
   }
@@ -501,18 +559,13 @@ function updateLiveFeedback(transcript) {
     els.transcript.textContent = transcript;
   }
 
-  checkIfSentenceComplete();
+  checkIfSentenceCompleteAndStop();
 }
 
 function finalizeScore(transcript) {
-  const spokenTokens = tokenize(transcript).slice(-targetTokens.length);
-  let correct = 0;
-
-  for (let i = 0; i < targetTokens.length && i < spokenTokens.length; i++) {
-    if (isSimilar(targetTokens[i], spokenTokens[i])) {
-      correct++;
-    }
-  }
+  const spokenTokens = tokenizeText(transcript);
+  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens);
+  const correct = matches.filter(Boolean).length;
 
   const score = Math.round((correct / (targetTokens.length || 1)) * 100);
   const feedbackEl = els.feedback;

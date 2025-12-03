@@ -554,49 +554,78 @@ function renderCurrentSentence() {
 
   const hasTokens = Array.isArray(sentence.tokens) && sentence.tokens.length > 0;
 
-  let tokensToRender;
-
   if (hasTokens) {
-    tokensToRender = sentence.tokens.map((tokenObj) => ({
+    const tokensForMatching = sentence.tokens.map((tokenObj) => ({
       surface: tokenObj.surface || '',
       translations: tokenObj.translations || {},
     }));
     targetTokens = tokenizeText(fullText);
+
+    let pos = 0;
+
+    tokensForMatching.forEach((tokenObj) => {
+      const word = tokenObj.surface;
+      if (!word) return;
+
+      const index = fullText.indexOf(word, pos);
+      if (index === -1) return;
+
+      const gap = fullText.slice(pos, index);
+      if (gap) {
+        sentenceEl.appendChild(document.createTextNode(gap));
+      }
+
+      const span = document.createElement('span');
+      span.textContent = word;
+      span.classList.add('word', 'word-pending');
+      span.dataset.word = word;
+
+      const wordTrans = tokenObj.translations?.[state.baseLang] || null;
+      const sentenceTrans = sentence.translations?.[state.baseLang] || null;
+
+      if (wordTrans) {
+        span.dataset.wordTranslation = wordTrans;
+      }
+      if (sentenceTrans) {
+        span.dataset.sentenceTranslation = sentenceTrans;
+      }
+
+      if (wordTrans) {
+        span.setAttribute('aria-label', wordTrans);
+      } else if (sentenceTrans) {
+        span.setAttribute('aria-label', sentenceTrans);
+      }
+
+      wordSpans.push(span);
+      sentenceEl.appendChild(span);
+
+      pos = index + word.length;
+    });
+
+    const tail = fullText.slice(pos);
+    if (tail) {
+      sentenceEl.appendChild(document.createTextNode(tail));
+    }
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
-    tokensToRender = rawTokens.map((word) => ({
-      surface: word,
-      translations: {}, // no word-level translations
-    }));
     targetTokens = rawTokens.map((w) => normalizeWord(w));
+
+    rawTokens.forEach((word) => {
+      const span = document.createElement('span');
+      span.textContent = word + ' ';
+      span.classList.add('word', 'word-pending');
+      span.dataset.word = word;
+
+      const sentenceTrans = sentence.translations?.[state.baseLang] || null;
+      if (sentenceTrans) {
+        span.dataset.sentenceTranslation = sentenceTrans;
+        span.setAttribute('aria-label', sentenceTrans);
+      }
+
+      wordSpans.push(span);
+      sentenceEl.appendChild(span);
+    });
   }
-
-  tokensToRender.forEach((tokenObj) => {
-    const span = document.createElement('span');
-    const spokenWord = tokenObj.surface || '';
-    span.textContent = spokenWord + ' ';
-    span.classList.add('word', 'word-pending');
-    span.dataset.word = spokenWord;
-
-    const wordTrans = tokenObj.translations?.[state.baseLang] || null;
-    const sentenceTrans = sentence.translations?.[state.baseLang] || null;
-
-    if (wordTrans) {
-      span.dataset.wordTranslation = wordTrans;
-    }
-    if (sentenceTrans) {
-      span.dataset.sentenceTranslation = sentenceTrans;
-    }
-
-    if (wordTrans) {
-      span.setAttribute('aria-label', wordTrans);
-    } else if (sentenceTrans) {
-      span.setAttribute('aria-label', sentenceTrans);
-    }
-
-    wordSpans.push(span);
-    sentenceEl.appendChild(span);
-  });
 
   resetSentenceState();
   els.feedback.textContent = '';

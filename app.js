@@ -36,6 +36,7 @@ const SpeechRecognition =
 if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
     window.speechSynthesis.getVoices();
+    warnIfArabicVoiceMissing();
   };
 }
 
@@ -48,6 +49,7 @@ let wordTooltipEl;
 let sentenceTooltipEl;
 let sentenceTooltipTimer = null;
 let currentTooltipTarget = null;
+let hasWarnedAboutArabicVoice = false;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -150,6 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadLessonManifest();
   updateLessonId();
   loadLesson();
+  warnIfArabicVoiceMissing();
 });
 
 function cacheElements() {
@@ -275,6 +278,7 @@ function attachEventListeners() {
     updateLessonId();
     saveProgress();
     loadLesson();
+    warnIfArabicVoiceMissing();
   });
 
   els.baseSelect.addEventListener('change', () => {
@@ -563,7 +567,11 @@ function renderCurrentSentence() {
 
   // RTL handling for Moroccan Darija
   const isRTL = state.targetLang === 'ma';
-  sentenceEl.dir = isRTL ? 'rtl' : 'ltr';
+  if (isRTL) {
+    sentenceEl.dir = 'rtl';
+  } else {
+    sentenceEl.dir = 'ltr';
+  }
   sentenceEl.classList.toggle('rtl-sentence', isRTL);
 
   const fullText = sentence.text || '';
@@ -616,6 +624,11 @@ function renderCurrentSentence() {
       wordSpans.push(span);
       sentenceEl.appendChild(span);
 
+      if (isRTL) {
+        sentenceEl.dir = 'rtl';
+        span.dir = 'rtl';
+      }
+
       pos = index + word.length;
     });
 
@@ -641,6 +654,10 @@ function renderCurrentSentence() {
 
       wordSpans.push(span);
       sentenceEl.appendChild(span);
+
+      if (isRTL) {
+        span.dir = 'rtl';
+      }
     });
   }
 
@@ -672,11 +689,31 @@ function getLangCode(l2) {
     case 'it':
       return 'it-IT';
     case 'ma':
-      return 'ar-MA';
+      return 'ar-SA'; // Fallback to standard Arabic so Chrome can speak it
     case 'ary':
       return 'ar-MA';
     default:
       return 'en-US';
+  }
+}
+
+function ensureArabicVoiceAvailable() {
+  if (!window.speechSynthesis) return false;
+  const voices = speechSynthesis.getVoices() || [];
+  return voices.some((v) => v.lang && v.lang.toLowerCase().startsWith('ar'));
+}
+
+function warnIfArabicVoiceMissing() {
+  if (hasWarnedAboutArabicVoice) return;
+  if (state.targetLang !== 'ma') return;
+  if (!window.speechSynthesis) return;
+
+  const voices = speechSynthesis.getVoices();
+  if (!voices || !voices.length) return;
+
+  if (!ensureArabicVoiceAvailable()) {
+    hasWarnedAboutArabicVoice = true;
+    alert('Arabic TTS is not available in Chrome on this system. For best results, use Microsoft Edge.');
   }
 }
 

@@ -1,0 +1,297 @@
+{
+  "lang": "ca",
+  "level": "A1",
+  "theme": "introductions",
+  "lesson": "A1.1",
+  "sentences": [
+    {
+      "id": "ca_a1_intro_001",
+      "text": "Hola, em dic Marc.",
+      "tokens": [
+        {
+          "surface": "Hola,",
+          "translations": {
+            "es": "hola",
+            "en": "hi / hello",
+            "fr": "salut",
+            "it": "ciao",
+            "ma": "سلام",
+            "ca": "hola"
+          }
+        },
+        {
+          "surface": "em",
+          "translations": {
+            "es": "me",
+            "en": "myself",
+            "fr": "me",
+            "it": "mi",
+            "ma": "أنا",
+            "ca": "em"
+          }
+        },
+        {
+          "surface": "dic",
+          "translations": {
+            "es": "llamo",
+            "en": "am called",
+            "fr": "m'appelle",
+            "it": "mi chiamo",
+            "ma": "كنسمّي",
+            "ca": "dic"
+          }
+        },
+        {
+          "surface": "Marc.",
+          "translations": {
+            "es": "Marc",
+            "en": "Marc",
+            "fr": "Marc",
+            "it": "Marc",
+            "ma": "مارك",
+            "ca": "Marc"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ca_a1_intro_002",
+      "text": "Bon dia, em dic Amina.",
+      "tokens": [
+        {
+          "surface": "Bon",
+          "translations": {
+            "es": "buen",
+            "en": "good",
+            "fr": "bon",
+            "it": "buon",
+            "ma": "مزيان",
+            "ca": "bon"
+          }
+        },
+        {
+          "surface": "dia,",
+          "translations": {
+            "es": "día",
+            "en": "day",
+            "fr": "jour",
+            "it": "giorno",
+            "ma": "نهار",
+            "ca": "dia"
+          }
+        },
+        {
+          "surface": "em",
+          "translations": {
+            "es": "me",
+            "en": "myself",
+            "fr": "me",
+            "it": "mi",
+            "ma": "أنا",
+            "ca": "em"
+          }
+        },
+        {
+          "surface": "dic",
+          "translations": {
+            "es": "llamo",
+            "en": "am called",
+            "fr": "m'appelle",
+            "it": "mi chiamo",
+            "ma": "كنسمّي",
+            "ca": "dic"
+          }
+        },
+        {
+          "surface": "Amina.",
+          "translations": {
+            "es": "Amina",
+            "en": "Amina",
+            "fr": "Amina",
+            "it": "Amina",
+            "ma": "أمينة",
+            "ca": "Amina"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ca_a1_intro_003",
+      "text": "Sóc de Colòmbia.",
+      "tokens": [
+        {
+          "surface": "Sóc",
+          "translations": {
+            "es": "soy",
+            "en": "am",
+            "fr": "suis",
+            "it": "sono",
+            "ma": "أنا",
+            "ca": "sóc"
+          }
+        },
+        {
+          "surface": "de",
+          "translations": {
+            "es": "de",
+            "en": "from / of",
+            "fr": "de",
+            "it": "di",
+            "ma": "من",
+            "ca": "de"
+          }
+        },
+        {
+          "surface": "Colòmbia.",
+          "translations": {
+            "es": "Colombia",
+            "en": "Colombia",
+            "fr": "Colombie",
+            "it": "Colombia",
+            "ma": "كولومبيا",
+            "ca": "Colòmbia"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ca_a1_intro_004",
+      "text": "Tinc tretze anys.",
+      "tokens": [
+        {
+          "surface": "Tinc",
+          "translations": {
+            "es": "tengo",
+            "en": "have (age)",
+            "fr": "ai",
+            "it": "ho",
+            "ma": "عندي",
+            "ca": "tinc"
+          }
+        },
+        {
+          "surface": "tretze",
+          "translations": {
+            "es": "trece",
+            "en": "thirteen",
+            "fr": "treize",
+            "it": "tredici",
+            "ma": "تلتاش",
+            "ca": "tretze"
+          }
+        },
+        {
+          "surface": "anys.",
+          "translations": {
+            "es": "años",
+            "en": "years",
+            "fr": "ans",
+            "it": "anni",
+            "ma": "السنين",
+            "ca": "anys"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ca_a1_intro_005",
+      "text": "Visc a Tarragona.",
+      "tokens": [
+        {
+          "surface": "Visc",
+          "translations": {
+            "es": "vivo",
+            "en": "live",
+            "fr": "vis",
+            "it": "vivo",
+            "ma": "ساكن",
+            "ca": "visc"
+          }
+        },
+        {
+          "surface": "a",
+          "translations": {
+            "es": "en / a",
+            "en": "in / at",
+            "fr": "à",
+            "it": "a",
+            "ma": "فـ",
+            "ca": "a"
+          }
+        },
+        {
+          "surface": "Tarragona.",
+          "translations": {
+            "es": "Tarragona",
+            "en": "Tarragona",
+            "fr": "Tarragone",
+            "it": "Tarragona",
+            "ma": "تاراغونا",
+            "ca": "Tarragona"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ca_a1_intro_006",
+      "text": "Parlo una mica de català.",
+      "tokens": [
+        {
+          "surface": "Parlo",
+          "translations": {
+            "es": "hablo",
+            "en": "speak",
+            "fr": "parle",
+            "it": "parlo",
+            "ma": "كنهضر",
+            "ca": "parlo"
+          }
+        },
+        {
+          "surface": "una",
+          "translations": {
+            "es": "una",
+            "en": "a (f.)",
+            "fr": "une",
+            "it": "una",
+            "ma": "واحدة",
+            "ca": "una"
+          }
+        },
+        {
+          "surface": "mica",
+          "translations": {
+            "es": "poco",
+            "en": "a little",
+            "fr": "un peu",
+            "it": "un po'",
+            "ma": "شوية",
+            "ca": "mica"
+          }
+        },
+        {
+          "surface": "de",
+          "translations": {
+            "es": "de",
+            "en": "of",
+            "fr": "de",
+            "it": "di",
+            "ma": "ديال",
+            "ca": "de"
+          }
+        },
+        {
+          "surface": "català.",
+          "translations": {
+            "es": "catalán",
+            "en": "Catalan",
+            "fr": "catalan",
+            "it": "catalano",
+            "ma": "الكتالان",
+            "ca": "català"
+          }
+        }
+      ]
+    }
+  ]
+}

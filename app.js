@@ -35,6 +35,10 @@ let targetTokens = [];
 let lastTranscript = '';
 let currentSentenceText = '';
 let wordStatus = [];
+let wordTooltipEl;
+let sentenceTooltipEl;
+let sentenceTooltipTimer = null;
+let currentTooltipTarget = null;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -130,6 +134,7 @@ async function ensureMasterRowsForLang(lang) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   cacheElements();
+  createTooltips();
   hydrateSelections();
   attachEventListeners();
   hydrateFromStorage();
@@ -151,6 +156,23 @@ function cacheElements() {
   els.status = document.getElementById('status');
   els.transcript = document.getElementById('transcript');
   els.feedback = document.getElementById('feedback');
+}
+
+function createTooltips() {
+  wordTooltipEl = document.createElement('div');
+  wordTooltipEl.className = 'tooltip tooltip-word';
+  wordTooltipEl.style.position = 'fixed';
+  wordTooltipEl.style.pointerEvents = 'none';
+  wordTooltipEl.style.visibility = 'hidden';
+
+  sentenceTooltipEl = document.createElement('div');
+  sentenceTooltipEl.className = 'tooltip tooltip-sentence';
+  sentenceTooltipEl.style.position = 'fixed';
+  sentenceTooltipEl.style.pointerEvents = 'none';
+  sentenceTooltipEl.style.visibility = 'hidden';
+
+  document.body.appendChild(wordTooltipEl);
+  document.body.appendChild(sentenceTooltipEl);
 }
 
 function hydrateSelections() {
@@ -271,6 +293,9 @@ function attachEventListeners() {
       e.target.classList.toggle('active');
     }
   });
+
+  els.sentence.addEventListener('mousemove', onSentenceMouseMove);
+  els.sentence.addEventListener('mouseleave', hideTooltips);
 }
 
 function hydrateFromStorage() {
@@ -437,11 +462,90 @@ function loadProgressForLesson() {
   }
 }
 
+function onSentenceMouseMove(e) {
+  const target = e.target;
+  if (!target.classList.contains('word')) {
+    hideTooltips();
+    return;
+  }
+
+  if (currentTooltipTarget !== target) {
+    currentTooltipTarget = target;
+    showWordTooltip(target, e.clientX, e.clientY);
+    scheduleSentenceTooltip(target, e.clientX, e.clientY);
+  } else {
+    positionTooltips(e.clientX, e.clientY);
+  }
+}
+
+function hideTooltips() {
+  currentTooltipTarget = null;
+  if (wordTooltipEl) {
+    wordTooltipEl.style.visibility = 'hidden';
+  }
+  if (sentenceTooltipEl) {
+    sentenceTooltipEl.style.visibility = 'hidden';
+  }
+  if (sentenceTooltipTimer) {
+    clearTimeout(sentenceTooltipTimer);
+    sentenceTooltipTimer = null;
+  }
+}
+
+function showWordTooltip(span, x, y) {
+  const wordTrans = span.dataset.wordTranslation || span.dataset.sentenceTranslation;
+  if (!wordTrans) {
+    wordTooltipEl.style.visibility = 'hidden';
+    return;
+  }
+  wordTooltipEl.textContent = wordTrans;
+  wordTooltipEl.style.visibility = 'visible';
+  positionTooltips(x, y);
+}
+
+function scheduleSentenceTooltip(span, x, y) {
+  if (sentenceTooltipEl) {
+    sentenceTooltipEl.style.visibility = 'hidden';
+  }
+  if (sentenceTooltipTimer) {
+    clearTimeout(sentenceTooltipTimer);
+  }
+
+  const sentenceTrans = span.dataset.sentenceTranslation;
+  const wordTrans = span.dataset.wordTranslation;
+
+  if (!sentenceTrans || !wordTrans || sentenceTrans === wordTrans) {
+    return;
+  }
+
+  sentenceTooltipTimer = setTimeout(() => {
+    if (currentTooltipTarget !== span) return;
+
+    sentenceTooltipEl.textContent = sentenceTrans;
+    sentenceTooltipEl.style.visibility = 'visible';
+    positionTooltips(x, y);
+  }, 800);
+}
+
+function positionTooltips(x, y) {
+  if (wordTooltipEl) {
+    wordTooltipEl.style.left = x + 12 + 'px';
+    wordTooltipEl.style.top = y + 8 + 'px';
+  }
+
+  if (sentenceTooltipEl && wordTooltipEl) {
+    const wordRect = wordTooltipEl.getBoundingClientRect();
+    sentenceTooltipEl.style.left = wordRect.left + 'px';
+    sentenceTooltipEl.style.top = wordRect.bottom + 4 + 'px';
+  }
+}
+
 function renderCurrentSentence() {
   if (!state.sentences.length) return;
   const sentence = currentSentence();
   const sentenceEl = els.sentence;
 
+  hideTooltips();
   sentenceEl.innerHTML = '';
   wordSpans = [];
 
@@ -474,13 +578,20 @@ function renderCurrentSentence() {
     span.classList.add('word', 'word-pending');
     span.dataset.word = spokenWord;
 
-    // Tooltip logic:
-    const wordTrans =
-      tokenObj.translations?.[state.baseLang] || sentence.translations?.[state.baseLang] || null;
+    const wordTrans = tokenObj.translations?.[state.baseLang] || null;
+    const sentenceTrans = sentence.translations?.[state.baseLang] || null;
+
+    if (wordTrans) {
+      span.dataset.wordTranslation = wordTrans;
+    }
+    if (sentenceTrans) {
+      span.dataset.sentenceTranslation = sentenceTrans;
+    }
 
     if (wordTrans) {
       span.setAttribute('aria-label', wordTrans);
-      span.dataset.translation = wordTrans;
+    } else if (sentenceTrans) {
+      span.setAttribute('aria-label', sentenceTrans);
     }
 
     wordSpans.push(span);

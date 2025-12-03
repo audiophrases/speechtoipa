@@ -1,7 +1,14 @@
 {
   "lessons": [
-    { "id": "fr_a1_introductions", "lang": "fr", "label": "A1 introductions" },
-    { "id": "ca_a1.1_introductions", "lang": "ca", "label": "A1.1 introductions" },
-    { "id": "ca_a1.2_introductions", "lang": "ca", "label": "A1.2 introductions" }
+    {
+      "id": "fr_a1_introductions",
+      "lang": "fr",
+      "label": "French A1 · Introductions"
+    },
+    {
+      "id": "ca_a1_course",
+      "lang": "ca",
+      "label": "Catalan A1 · Course"
+    }
   ]
 }

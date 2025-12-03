@@ -33,6 +33,12 @@ const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
+}
+
 let wordSpans = [];
 let targetTokens = [];
 let lastTranscript = '';
@@ -555,6 +561,11 @@ function renderCurrentSentence() {
   sentenceEl.innerHTML = '';
   wordSpans = [];
 
+  // RTL handling for Moroccan Darija
+  const isRTL = state.targetLang === 'ma';
+  sentenceEl.dir = isRTL ? 'rtl' : 'ltr';
+  sentenceEl.classList.toggle('rtl-sentence', isRTL);
+
   const fullText = sentence.text || '';
   currentSentenceText = fullText;
 
@@ -669,9 +680,40 @@ function getLangCode(l2) {
   }
 }
 
+function getVoiceForLang(langCode) {
+  if (!window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || !voices.length) return null;
+
+  // 1) Exact match (e.g. 'ar-MA')
+  let voice = voices.find((v) => v.lang === langCode);
+  if (voice) return voice;
+
+  // 2) Match by base language (e.g. 'ar' from 'ar-MA')
+  const base = langCode.split('-')[0];
+  voice = voices.find((v) => v.lang.toLowerCase().startsWith(base.toLowerCase()));
+  if (voice) return voice;
+
+  // 3) Fallback: any Arabic voice if we’re using Darija
+  if (base === 'ar') {
+    voice = voices.find((v) => v.lang.toLowerCase().startsWith('ar'));
+    if (voice) return voice;
+  }
+
+  // 4) General fallback – first English or first voice
+  voice = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+  return voice || voices[0];
+}
+
 function speakSentence(text, langCode, rate = 1.0) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = langCode;
+
+  const voice = getVoiceForLang(langCode);
+  if (voice) {
+    u.voice = voice;
+  }
+
   u.rate = rate;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);

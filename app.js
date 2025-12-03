@@ -400,17 +400,19 @@ async function loadLesson() {
     bySentence[sid].push(row);
   });
 
+  const l2Col = lang;
+
   const sentences = sentenceOrder.map((sid, index) => {
     const group = bySentence[sid];
     const sentenceRow = group.find((r) => !r.token_id); // token_id empty = sentence row
     const tokenRows = group.filter((r) => r.token_id);
 
-    // 1) Sentence text (L2) – use the active target language with a Catalan fallback
-    const text = (sentenceRow && (sentenceRow[state.targetLang] || sentenceRow.ca)) || '';
+    // 1) Sentence text (L2)
+    const text = (sentenceRow && sentenceRow[l2Col]) || '';
 
     // 2) Sentence-level translations
     const sentenceTranslations = {};
-    ['es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
+    ['ca', 'es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
       const val = sentenceRow && sentenceRow[code];
       if (val) sentenceTranslations[code] = val;
     });
@@ -421,11 +423,11 @@ async function loadLesson() {
       .sort((a, b) => a.token_id.localeCompare(b.token_id))
       .map((r) => {
         const tokenTranslations = {};
-        ['es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
+        ['ca', 'es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
           const val = r[code];
           if (val) tokenTranslations[code] = val;
         });
-        const surface = r[state.targetLang] || r.ca || '';
+        const surface = r[l2Col] || '';
         return {
           surface,
           translations: tokenTranslations,

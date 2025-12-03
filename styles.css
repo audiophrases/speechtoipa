@@ -139,30 +139,22 @@ button.secondary {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.word::after {
-  content: attr(data-translation);
-  position: absolute;
-  left: 50%;
-  bottom: 120%;
-  transform: translateX(-50%);
-  background: #111827;
-  color: var(--text);
-  padding: 0.35rem 0.5rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  transform-origin: bottom;
-  z-index: 2;
+.tooltip {
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+  max-width: 260px;
+  z-index: 9999;
 }
 
-.word:hover::after,
-.word.active::after {
-  opacity: 1;
-  transform: translate(-50%, -4px);
+.tooltip-word {
+  transform: translateY(-2px);
+}
+
+.tooltip-sentence {
+  margin-top: 4px;
 }
 
 .word-correct {

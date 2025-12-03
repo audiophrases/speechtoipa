@@ -19,6 +19,14 @@ const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 
+const MASTER_CSV_URLS = {
+  ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?output=csv'
+  // later I might add fr, it, etc. with their own URLs
+};
+
+const MASTER_ROWS_BY_LANG = {};
+const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
+
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -39,6 +47,86 @@ const state = {
 };
 
 const els = {};
+
+function parseCsvToObjects(text) {
+  const rows = [];
+  let current = '';
+  let inQuotes = false;
+  let row = [];
+
+  const pushCell = () => {
+    row.push(current);
+    current = '';
+  };
+  const pushRow = () => {
+    if (row.length) {
+      rows.push(row.map((cell) => cell.replace(/^"|"$/g, '')));
+      row = [];
+    }
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      pushCell();
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') {
+        i++;
+      }
+      pushCell();
+      pushRow();
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.length || row.length) {
+    pushCell();
+    pushRow();
+  }
+
+  if (!rows.length) return [];
+
+  const headers = rows[0].map((h) => h.trim());
+  return rows
+    .slice(1)
+    .filter((cells) => cells.some((c) => c && c.trim().length))
+    .map((cells) => {
+      const obj = {};
+      headers.forEach((h, idx) => {
+        obj[h] = (cells[idx] || '').trim();
+      });
+      return obj;
+    });
+}
+
+async function ensureMasterRowsForLang(lang) {
+  if (MASTER_ROWS_BY_LANG[lang]) return MASTER_ROWS_BY_LANG[lang];
+
+  const url = MASTER_CSV_URLS[lang];
+  if (!url) return null;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.error('Failed to fetch master CSV for', lang, res.status);
+    return null;
+  }
+  const text = await res.text();
+  const rows = parseCsvToObjects(text);
+  MASTER_ROWS_BY_LANG[lang] = rows;
+
+  console.log('Loaded master rows for', lang, 'count =', rows.length);
+  return rows;
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   cacheElements();
@@ -68,7 +156,6 @@ function cacheElements() {
 function hydrateSelections() {
   populateSelect(els.targetSelect, TARGET_LANGS, state.targetLang);
   populateSelect(els.baseSelect, BASE_LANGS, state.baseLang);
-  populateLessonSelect();
 }
 
 function populateSelect(select, options, selected) {
@@ -110,23 +197,50 @@ function populateLessonSelect() {
 }
 
 async function loadLessonManifest() {
+  const lang = state.targetLang;
+
+  // If we have a CSV for this language, build lessons from it.
+  const rows = await ensureMasterRowsForLang(lang);
+  if (rows && rows.length) {
+    const lessonMap = new Map();
+
+    rows.forEach((row) => {
+      if (!row.lesson_id) return;
+      if (!lessonMap.has(row.lesson_id)) {
+        // For now, use lesson_title as theme + label.
+        const title = row.lesson_title || row.lesson_id;
+        lessonMap.set(row.lesson_id, {
+          id: row.lesson_id,
+          lang,
+          label: title,
+          theme: title,
+        });
+      }
+    });
+
+    availableLessons = Array.from(lessonMap.values());
+    populateLessonSelect();
+    return;
+  }
+
+  // Fallback: old JSON manifest (for languages without a CSV yet)
   try {
     const res = await fetch('data/lessons.json');
     if (!res.ok) throw new Error('No manifest');
     const data = await res.json();
     availableLessons = Array.isArray(data.lessons) ? data.lessons : [];
+    populateLessonSelect();
   } catch (err) {
-    console.warn('Falling back to default lesson list', err);
+    console.warn('Falling back to empty lesson list', err);
     availableLessons = [];
+    populateLessonSelect();
   }
-
-  populateLessonSelect();
 }
 
 function attachEventListeners() {
-  els.targetSelect.addEventListener('change', () => {
+  els.targetSelect.addEventListener('change', async () => {
     state.targetLang = els.targetSelect.value;
-    populateLessonSelect();
+    await loadLessonManifest();
     updateLessonId();
     saveProgress();
     loadLesson();
@@ -224,25 +338,92 @@ function updateLessonId() {
 }
 
 async function loadLesson() {
-  const path = `data/${state.lessonId}.json`;
-  setStatus(`Loading lesson ${path}...`);
-  try {
-    const res = await fetch(path);
-    if (!res.ok) throw new Error(`Unable to load ${path}`);
-    const data = await res.json();
-    state.sentences = data.sentences || [];
-    console.log('Loaded lesson', path, 'sentences:', state.sentences.length);
-    if (!state.sentences.length) throw new Error('No sentences in lesson.');
-    const saved = loadProgressForLesson();
-    state.currentIndex = saved?.currentIndex || 0;
-    renderCurrentSentence();
-    setStatus(`Loaded ${data.lang.toUpperCase()} • ${data.level} • ${data.theme}`);
-  } catch (err) {
-    console.error(err);
-    setStatus('Could not load lesson. Please ensure the JSON exists.');
+  const lang = state.targetLang;
+  const lessonId = state.lessonId;
+  if (!lessonId) return;
+
+  const rows = await ensureMasterRowsForLang(lang);
+  if (!rows || !rows.length) {
+    setStatus('No data available for this language.');
     state.sentences = [];
     els.sentence.textContent = '';
+    return;
   }
+
+  const lessonRows = rows.filter((r) => r.lesson_id === lessonId);
+  if (!lessonRows.length) {
+    setStatus('No sentences for this lesson.');
+    state.sentences = [];
+    els.sentence.textContent = '';
+    return;
+  }
+
+  // Group by sentence_id and preserve sentence order by first occurrence
+  const bySentence = {};
+  const sentenceOrder = [];
+
+  lessonRows.forEach((row) => {
+    const sid = row.sentence_id;
+    if (!sid) return;
+    if (!bySentence[sid]) {
+      bySentence[sid] = [];
+      sentenceOrder.push(sid);
+    }
+    bySentence[sid].push(row);
+  });
+
+  const sentences = sentenceOrder.map((sid, index) => {
+    const group = bySentence[sid];
+    const sentenceRow = group.find((r) => !r.token_id); // token_id empty = sentence row
+    const tokenRows = group.filter((r) => r.token_id);
+
+    // 1) Sentence text (L2) – here 'ca'
+    const text = (sentenceRow && sentenceRow.ca) || '';
+
+    // 2) Sentence-level translations
+    const sentenceTranslations = {};
+    ['es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
+      const val = sentenceRow && sentenceRow[code];
+      if (val) sentenceTranslations[code] = val;
+    });
+
+    // 3) Tokens (if any token rows exist)
+    const tokens = tokenRows
+      .slice()
+      .sort((a, b) => a.token_id.localeCompare(b.token_id))
+      .map((r) => {
+        const tokenTranslations = {};
+        ['es', 'en', 'fr', 'it', 'ma'].forEach((code) => {
+          const val = r[code];
+          if (val) tokenTranslations[code] = val;
+        });
+        return {
+          surface: r.ca,
+          translations: tokenTranslations,
+        };
+      });
+
+    return {
+      id: sid,
+      unit: null, // we can keep null for now; order is controlled by sentenceOrder
+      theme: sentenceRow?.lesson_title || lessonId,
+      title: sentenceRow?.lesson_title || lessonId,
+      sentenceNumber: index + 1,
+      text,
+      translations: sentenceTranslations,
+      tokens,
+    };
+  });
+
+  state.sentences = sentences;
+  const saved = loadProgressForLesson();
+  state.currentIndex = saved?.currentIndex || 0;
+
+  renderCurrentSentence();
+  const lessonMeta = availableLessons.find((l) => l.id === lessonId) || {};
+  setStatus(
+    `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}`
+  );
 }
 
 function loadProgressForLesson() {
@@ -270,18 +451,18 @@ function renderCurrentSentence() {
   const hasTokens = Array.isArray(sentence.tokens) && sentence.tokens.length > 0;
 
   let tokensToRender;
+
   if (hasTokens) {
     tokensToRender = sentence.tokens.map((tokenObj) => ({
-      surface: tokenObj.surface || tokenObj.text || '',
+      surface: tokenObj.surface || '',
       translations: tokenObj.translations || {},
-      latin: tokenObj.latin,
     }));
     targetTokens = tokenizeText(fullText);
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
     tokensToRender = rawTokens.map((word) => ({
       surface: word,
-      translations: {},
+      translations: {}, // no word-level translations
     }));
     targetTokens = rawTokens.map((w) => normalizeWord(w));
   }
@@ -293,19 +474,19 @@ function renderCurrentSentence() {
     span.classList.add('word', 'word-pending');
     span.dataset.word = spokenWord;
 
-    const translation = tokenObj.translations?.[state.baseLang];
-    if (translation) {
-      span.setAttribute('aria-label', translation);
-      span.dataset.translation = translation;
-    }
+    // Tooltip logic:
+    const wordTrans =
+      tokenObj.translations?.[state.baseLang] || sentence.translations?.[state.baseLang] || null;
 
-    if (tokenObj.latin) {
-      span.dataset.latin = tokenObj.latin;
+    if (wordTrans) {
+      span.setAttribute('aria-label', wordTrans);
+      span.dataset.translation = wordTrans;
     }
 
     wordSpans.push(span);
     sentenceEl.appendChild(span);
   });
+
   resetSentenceState();
   els.feedback.textContent = '';
   els.transcript.textContent = '';

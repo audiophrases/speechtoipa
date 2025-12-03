@@ -120,6 +120,7 @@ function attachEventListeners() {
 
   els.sentence.addEventListener('click', (e) => {
     if (e.target.classList.contains('word')) {
+      speakWord(e.target.dataset.word);
       e.target.classList.toggle('active');
     }
   });
@@ -233,8 +234,10 @@ function renderCurrentSentence() {
 
   sentence.tokens.forEach((tokenObj) => {
     const span = document.createElement('span');
-    span.textContent = `${tokenObj.surface || tokenObj.text || ''} `;
+    const spokenWord = tokenObj.surface || tokenObj.text || '';
+    span.textContent = `${spokenWord} `;
     span.classList.add('word', 'word-pending');
+    span.dataset.word = spokenWord;
 
     const translation = tokenObj.translations?.[state.baseLang];
     if (translation) {
@@ -296,6 +299,11 @@ function speakSentence(text, langCode, rate = 1.0) {
 function speakCurrent(rate = 1) {
   if (!state.sentences.length) return;
   const text = currentSentence().text;
+  speakSentence(text, getLangCode(state.targetLang), rate);
+}
+
+function speakWord(text, rate = 1) {
+  if (!text) return;
   speakSentence(text, getLangCode(state.targetLang), rate);
 }
 

@@ -231,6 +231,7 @@ async function loadLesson() {
     if (!res.ok) throw new Error(`Unable to load ${path}`);
     const data = await res.json();
     state.sentences = data.sentences || [];
+    console.log('Loaded lesson', path, 'sentences:', state.sentences.length);
     if (!state.sentences.length) throw new Error('No sentences in lesson.');
     const saved = loadProgressForLesson();
     state.currentIndex = saved?.currentIndex || 0;
@@ -259,15 +260,36 @@ function renderCurrentSentence() {
   if (!state.sentences.length) return;
   const sentence = currentSentence();
   const sentenceEl = els.sentence;
+
   sentenceEl.innerHTML = '';
   wordSpans = [];
-  currentSentenceText = sentence.text;
-  targetTokens = tokenizeText(currentSentenceText);
 
-  sentence.tokens.forEach((tokenObj) => {
+  const fullText = sentence.text || '';
+  currentSentenceText = fullText;
+
+  const hasTokens = Array.isArray(sentence.tokens) && sentence.tokens.length > 0;
+
+  let tokensToRender;
+  if (hasTokens) {
+    tokensToRender = sentence.tokens.map((tokenObj) => ({
+      surface: tokenObj.surface || tokenObj.text || '',
+      translations: tokenObj.translations || {},
+      latin: tokenObj.latin,
+    }));
+    targetTokens = tokenizeText(fullText);
+  } else {
+    const rawTokens = fullText.split(/\s+/).filter(Boolean);
+    tokensToRender = rawTokens.map((word) => ({
+      surface: word,
+      translations: {},
+    }));
+    targetTokens = rawTokens.map((w) => normalizeWord(w));
+  }
+
+  tokensToRender.forEach((tokenObj) => {
     const span = document.createElement('span');
-    const spokenWord = tokenObj.surface || tokenObj.text || '';
-    span.textContent = `${spokenWord} `;
+    const spokenWord = tokenObj.surface || '';
+    span.textContent = spokenWord + ' ';
     span.classList.add('word', 'word-pending');
     span.dataset.word = spokenWord;
 

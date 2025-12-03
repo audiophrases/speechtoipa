@@ -238,7 +238,7 @@ function renderCurrentSentence() {
 
     const translation = tokenObj.translations?.[state.baseLang];
     if (translation) {
-      span.title = translation;
+      span.setAttribute('aria-label', translation);
       span.dataset.translation = translation;
     }
 

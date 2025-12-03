@@ -108,6 +108,16 @@ button.secondary {
   margin-bottom: 1rem;
 }
 
+#sentence.rtl-sentence {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Optional: keep words inline nicely */
+#sentence.rtl-sentence .word {
+  direction: rtl;
+}
+
 .controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

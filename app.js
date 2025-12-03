@@ -20,8 +20,11 @@ const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 
 const MASTER_CSV_URLS = {
-  ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?output=csv'
-  // later I might add fr, it, etc. with their own URLs
+  ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?output=csv',
+  en: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRlZ38dI61R0YBuSSP78RD5Hv5-fgx2w6_baGe3gOaOrXvz0cnUcuJv6tpZ4CzFgI6iWrP1vJgTovNL/pub?output=csv',
+  fr: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRbgh9FvSaYhtedHHG1-2LLuxThqtVKz0mKCD-UYXaurCm2uwsH4CznwNJ8JsIbl8C7YcQKeaz7g-Gm/pub?output=csv',
+  it: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVaKhhukK9l79VNYFha5L0YW0FYFO1tZYsUQ5KXXy0eViJQw7QGmVX6-3ISAkTYVaaQevCyvsS2FcP/pub?output=csv',
+  ma: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTTuz-s3rcRSr2j65pWj2brlbQN-IYcaw030X3vH__apTIem6ti3BfsJR23kIqAF8yKViTiJRm08GD5/pub?output=csv',
 };
 
 const MASTER_ROWS_BY_LANG = {};
@@ -402,8 +405,8 @@ async function loadLesson() {
     const sentenceRow = group.find((r) => !r.token_id); // token_id empty = sentence row
     const tokenRows = group.filter((r) => r.token_id);
 
-    // 1) Sentence text (L2) – here 'ca'
-    const text = (sentenceRow && sentenceRow.ca) || '';
+    // 1) Sentence text (L2) – use the active target language with a Catalan fallback
+    const text = (sentenceRow && (sentenceRow[state.targetLang] || sentenceRow.ca)) || '';
 
     // 2) Sentence-level translations
     const sentenceTranslations = {};
@@ -422,8 +425,9 @@ async function loadLesson() {
           const val = r[code];
           if (val) tokenTranslations[code] = val;
         });
+        const surface = r[state.targetLang] || r.ca || '';
         return {
-          surface: r.ca,
+          surface,
           translations: tokenTranslations,
         };
       });

@@ -1,0 +1,7 @@
+{
+  "lessons": [
+    { "id": "fr_a1_introductions", "lang": "fr", "label": "A1 introductions" },
+    { "id": "ca_a1.1_introductions", "lang": "ca", "label": "A1.1 introductions" },
+    { "id": "ca_a1.2_introductions", "lang": "ca", "label": "A1.2 introductions" }
+  ]
+}

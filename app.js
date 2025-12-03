@@ -17,6 +17,7 @@ const BASE_LANGS = [
 
 const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
+let availableLessons = [];
 
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -39,11 +40,12 @@ const state = {
 
 const els = {};
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   cacheElements();
   hydrateSelections();
   attachEventListeners();
   hydrateFromStorage();
+  await loadLessonManifest();
   updateLessonId();
   loadLesson();
 });
@@ -80,12 +82,45 @@ function populateSelect(select, options, selected) {
   });
 }
 
+function getLessonsForLang(lang) {
+  const lessons = availableLessons.filter((lesson) => lesson.lang === lang);
+  if (lessons.length) return lessons;
+  return [
+    {
+      id: `${lang}_${DEFAULT_LESSON_SUFFIX}`,
+      lang,
+      label: 'A1 introductions',
+    },
+  ];
+}
+
 function populateLessonSelect() {
-  const option = document.createElement('option');
-  option.value = `${state.targetLang}_${DEFAULT_LESSON_SUFFIX}`;
-  option.textContent = `A1 introductions (${state.targetLang})`;
+  const lessons = getLessonsForLang(state.targetLang);
   els.lessonSelect.innerHTML = '';
-  els.lessonSelect.appendChild(option);
+  lessons.forEach((lesson) => {
+    const option = document.createElement('option');
+    option.value = lesson.id;
+    option.textContent = `${lesson.label} (${lesson.lang})`;
+    els.lessonSelect.appendChild(option);
+  });
+
+  const hasSelection = lessons.some((lesson) => lesson.id === state.lessonId);
+  state.lessonId = hasSelection ? state.lessonId : lessons[0].id;
+  els.lessonSelect.value = state.lessonId;
+}
+
+async function loadLessonManifest() {
+  try {
+    const res = await fetch('data/lessons.json');
+    if (!res.ok) throw new Error('No manifest');
+    const data = await res.json();
+    availableLessons = Array.isArray(data.lessons) ? data.lessons : [];
+  } catch (err) {
+    console.warn('Falling back to default lesson list', err);
+    availableLessons = [];
+  }
+
+  populateLessonSelect();
 }
 
 function attachEventListeners() {
@@ -184,8 +219,7 @@ function saveProgress(bestScore) {
 }
 
 function updateLessonId() {
-  state.lessonId = `${state.targetLang}_${DEFAULT_LESSON_SUFFIX}`;
-  els.lessonSelect.value = state.lessonId;
+  state.lessonId = els.lessonSelect.value;
   initRecognition();
 }
 

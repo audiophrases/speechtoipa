@@ -21,7 +21,7 @@ let availableLessons = [];
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?output=csv',
-  en: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRlZ38dI61R0YBuSSP78RD5Hv5-fgx2w6_baGe3gOaOrXvz0cnUcuJv6tpZ4CzFgI6iWrP1vJgTovNL/pub?output=csv',
+  en: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?output=csv',
   fr: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRbgh9FvSaYhtedHHG1-2LLuxThqtVKz0mKCD-UYXaurCm2uwsH4CznwNJ8JsIbl8C7YcQKeaz7g-Gm/pub?output=csv',
   it: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVaKhhukK9l79VNYFha5L0YW0FYFO1tZYsUQ5KXXy0eViJQw7QGmVX6-3ISAkTYVaaQevCyvsS2FcP/pub?output=csv',
   ma: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTTuz-s3rcRSr2j65pWj2brlbQN-IYcaw030X3vH__apTIem6ti3BfsJR23kIqAF8yKViTiJRm08GD5/pub?output=csv',

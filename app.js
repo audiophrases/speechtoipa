@@ -253,9 +253,16 @@ function populateLessonSelect() {
     els.lessonSelect.appendChild(option);
   });
 
-  const hasSelection = options.some((lesson) => lesson.id === state.lessonId);
+  const selectionIsCustomWithoutInput =
+    state.lessonId === CUSTOM_LESSON_ID && !state.customSentence;
+  const hasSelection =
+    !selectionIsCustomWithoutInput && options.some((lesson) => lesson.id === state.lessonId);
   const fallbackLessonId = getDefaultLessonId();
-  const nextLessonId = hasSelection ? state.lessonId : fallbackLessonId;
+  const nextLessonId = selectionIsCustomWithoutInput
+    ? fallbackLessonId
+    : hasSelection
+      ? state.lessonId
+      : fallbackLessonId;
 
   state.lessonId = nextLessonId;
   els.lessonSelect.value = state.lessonId;
@@ -425,7 +432,9 @@ function hydrateFromStorage() {
     const saved = normalizeLegacyCodes(JSON.parse(raw));
     if (saved.targetLang) state.targetLang = saved.targetLang;
     if (saved.baseLang) state.baseLang = saved.baseLang;
-    if (saved.lessonId) state.lessonId = saved.lessonId;
+    if (saved.lessonId && saved.lessonId !== CUSTOM_LESSON_ID) {
+      state.lessonId = saved.lessonId;
+    }
     if (saved.progress && saved.progress[state.lessonId]) {
       state.currentIndex = saved.progress[state.lessonId].currentIndex || 0;
     }
@@ -491,7 +500,11 @@ async function loadLesson() {
   if (!lessonId) return;
 
   if (lessonId === CUSTOM_LESSON_ID) {
-    openCustomModal();
+    if (state.mode === 'custom') return;
+
+    const fallbackLessonId = lastLessonId || getDefaultLessonId();
+    state.lessonId = fallbackLessonId;
+    els.lessonSelect.value = fallbackLessonId;
     return;
   }
 

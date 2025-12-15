@@ -18,6 +18,7 @@ const BASE_LANGS = [
 const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
+const CUSTOM_LESSON_ID = 'custom';
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
@@ -50,6 +51,7 @@ let sentenceTooltipEl;
 let sentenceTooltipTimer = null;
 let currentTooltipTarget = null;
 let hasWarnedAboutArabicVoice = false;
+let lastLessonId = '';
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -174,6 +176,8 @@ function cacheElements() {
   els.customInput = document.getElementById('custom-sentence');
   els.customSubmit = document.getElementById('custom-submit');
   els.customReset = document.getElementById('custom-reset');
+  els.customModal = document.getElementById('custom-modal');
+  els.customBackdrop = document.querySelector('[data-close-modal]');
 }
 
 function createTooltips() {
@@ -221,19 +225,45 @@ function getLessonsForLang(lang) {
   ];
 }
 
-function populateLessonSelect() {
+function getCustomLessonOption(lang) {
+  return {
+    id: CUSTOM_LESSON_ID,
+    lang,
+    label: 'Custom text',
+  };
+}
+
+function getLessonOptions() {
   const lessons = getLessonsForLang(state.targetLang);
+  return [getCustomLessonOption(state.targetLang), ...lessons];
+}
+
+function getDefaultLessonId() {
+  const lessons = getLessonsForLang(state.targetLang);
+  return lessons[0]?.id || `${state.targetLang}_${DEFAULT_LESSON_SUFFIX}`;
+}
+
+function populateLessonSelect() {
+  const options = getLessonOptions();
   els.lessonSelect.innerHTML = '';
-  lessons.forEach((lesson) => {
+  options.forEach((lesson) => {
     const option = document.createElement('option');
     option.value = lesson.id;
     option.textContent = `${lesson.label} (${lesson.lang})`;
     els.lessonSelect.appendChild(option);
   });
 
-  const hasSelection = lessons.some((lesson) => lesson.id === state.lessonId);
-  state.lessonId = hasSelection ? state.lessonId : lessons[0].id;
+  const hasSelection = options.some((lesson) => lesson.id === state.lessonId);
+  const defaultLessonId = getDefaultLessonId();
+
+  state.lessonId = hasSelection ? state.lessonId : defaultLessonId;
   els.lessonSelect.value = state.lessonId;
+
+  if (state.lessonId !== CUSTOM_LESSON_ID) {
+    lastLessonId = state.lessonId;
+  } else if (!lastLessonId) {
+    lastLessonId = defaultLessonId;
+  }
 }
 
 async function loadLessonManifest() {
@@ -294,14 +324,7 @@ function attachEventListeners() {
   });
 
   els.lessonSelect.addEventListener('change', () => {
-    if (state.mode === 'custom') {
-      state.mode = 'lesson';
-      state.savedLessonState = null;
-    }
-    state.lessonId = els.lessonSelect.value;
-    state.currentIndex = 0;
-    saveProgress();
-    loadLesson();
+    handleLessonSelection(els.lessonSelect.value);
   });
 
   els.play.addEventListener('click', () => speakCurrent(1));
@@ -333,8 +356,57 @@ function attachEventListeners() {
 
   els.customReset.addEventListener('click', (e) => {
     e.preventDefault();
-    exitCustomMode();
+    closeCustomModal(true);
   });
+
+  if (els.customBackdrop) {
+    els.customBackdrop.addEventListener('click', () => closeCustomModal(true));
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && els.customModal && !els.customModal.classList.contains('hidden')) {
+      closeCustomModal(true);
+    }
+  });
+}
+
+function handleLessonSelection(selection) {
+  if (selection === CUSTOM_LESSON_ID) {
+    openCustomModal();
+    els.lessonSelect.value = state.lessonId || lastLessonId || getDefaultLessonId();
+    return;
+  }
+
+  if (state.mode === 'custom') {
+    state.mode = 'lesson';
+    state.savedLessonState = null;
+  }
+
+  state.lessonId = selection;
+  lastLessonId = selection;
+  state.currentIndex = 0;
+  saveProgress();
+  loadLesson();
+}
+
+function openCustomModal() {
+  if (!els.customModal) return;
+  els.customModal.classList.remove('hidden');
+  els.customModal.setAttribute('aria-hidden', 'false');
+  if (els.customInput) {
+    els.customInput.value = state.customSentence || '';
+    els.customInput.focus();
+  }
+}
+
+function closeCustomModal(resetSelection = false) {
+  if (!els.customModal) return;
+  els.customModal.classList.add('hidden');
+  els.customModal.setAttribute('aria-hidden', 'true');
+
+  if (resetSelection && state.mode !== 'custom') {
+    els.lessonSelect.value = state.lessonId || lastLessonId || getDefaultLessonId();
+  }
 }
 
 function hydrateFromStorage() {
@@ -408,6 +480,13 @@ async function loadLesson() {
   const lang = state.targetLang;
   const lessonId = state.lessonId;
   if (!lessonId) return;
+
+  if (lessonId === CUSTOM_LESSON_ID) {
+    openCustomModal();
+    return;
+  }
+
+  lastLessonId = lessonId;
 
   const rows = await ensureMasterRowsForLang(lang);
   if (!rows || !rows.length) {
@@ -723,7 +802,9 @@ function enterCustomMode(text) {
     };
   }
 
+  state.customSentence = text;
   state.mode = 'custom';
+  state.lessonId = CUSTOM_LESSON_ID;
   state.currentIndex = 0;
   state.sentences = [
     {
@@ -738,6 +819,8 @@ function enterCustomMode(text) {
     },
   ];
 
+  els.lessonSelect.value = CUSTOM_LESSON_ID;
+  closeCustomModal();
   renderCurrentSentence();
   setStatus('Practicing your custom sentence.');
 }
@@ -753,6 +836,7 @@ function exitCustomMode() {
     state.lessonId = saved.lessonId || state.lessonId;
     state.sentences = saved.sentences;
     state.currentIndex = saved.currentIndex || 0;
+    lastLessonId = state.lessonId;
     populateLessonSelect();
     els.lessonSelect.value = state.lessonId;
     renderCurrentSentence();

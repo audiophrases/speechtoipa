@@ -25,20 +25,6 @@
       <label for="lesson-select">Lesson:</label>
       <select id="lesson-select"></select>
     </div>
-    <div class="field custom-field">
-      <label for="custom-sentence">Custom practice</label>
-      <textarea
-        id="custom-sentence"
-        rows="3"
-        placeholder="Type or paste a sentence to practice"
-        aria-label="Custom sentence input"
-      ></textarea>
-      <div class="custom-actions">
-        <button id="custom-submit">Practice this sentence</button>
-        <button id="custom-reset" class="secondary">Back to lessons</button>
-      </div>
-      <p class="small">Submit a custom sentence without losing your lesson progress.</p>
-    </div>
   </section>
 
   <main id="app" class="card" aria-live="polite">
@@ -54,6 +40,28 @@
     <div id="transcript" class="transcript" aria-live="polite"></div>
     <div id="feedback" class="feedback" aria-live="polite"></div>
   </main>
+
+  <div id="custom-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="custom-modal-title">
+      <h2 id="custom-modal-title">Practice custom text</h2>
+      <p class="small">Use your own text without losing your lesson progress.</p>
+
+      <div class="custom-field">
+        <label for="custom-sentence">Custom practice</label>
+        <textarea
+          id="custom-sentence"
+          rows="4"
+          placeholder="Type or paste a sentence to practice"
+          aria-label="Custom sentence input"
+        ></textarea>
+        <div class="custom-actions">
+          <button id="custom-submit">Practice this sentence</button>
+          <button id="custom-reset" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

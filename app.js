@@ -353,11 +353,15 @@ function attachEventListeners() {
     }
     state.customSentence = text;
     enterCustomMode(text);
+    closeCustomModal();
   });
 
   els.customReset.addEventListener('click', (e) => {
     e.preventDefault();
     closeCustomModal(true);
+    if (!state.customSentence) {
+      els.customInput.value = '';
+    }
   });
 
   if (els.customBackdrop) {

@@ -1,18 +1,18 @@
 const TARGET_LANGS = [
-  { code: 'fr', label: 'French' },
   { code: 'en', label: 'English' },
+  { code: 'fr', label: 'French' },
   { code: 'ca', label: 'Catalan' },
-  { code: 'it', label: 'Italian' },
-  { code: 'ma', label: 'Moroccan Darija' }
+  { code: 'ma', label: 'Moroccan Darija' },
+  { code: 'it', label: 'Italian' }
 ];
 
 const BASE_LANGS = [
-  { code: 'en', label: 'English' },
-  { code: 'es', label: 'Spanish' },
   { code: 'ca', label: 'Catalan' },
+  { code: 'en', label: 'English' },
   { code: 'fr', label: 'French' },
-  { code: 'it', label: 'Italian' },
-  { code: 'ma', label: 'Moroccan Darija' }
+  { code: 'es', label: 'Spanish' },
+  { code: 'ma', label: 'Moroccan Darija' },
+  { code: 'it', label: 'Italian' }
 ];
 
 const STORAGE_KEY = 'speechReadingProgress';

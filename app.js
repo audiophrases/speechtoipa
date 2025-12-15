@@ -254,10 +254,10 @@ function populateLessonSelect() {
   });
 
   const hasSelection = options.some((lesson) => lesson.id === state.lessonId);
-  const defaultLessonId = hasSelection ? state.lessonId : CUSTOM_LESSON_ID;
   const fallbackLessonId = getDefaultLessonId();
+  const nextLessonId = hasSelection ? state.lessonId : fallbackLessonId;
 
-  state.lessonId = hasSelection ? state.lessonId : defaultLessonId;
+  state.lessonId = nextLessonId;
   els.lessonSelect.value = state.lessonId;
 
   if (state.lessonId !== CUSTOM_LESSON_ID) {
@@ -405,8 +405,12 @@ function closeCustomModal(resetSelection = false) {
   els.customModal.classList.add('hidden');
   els.customModal.setAttribute('aria-hidden', 'true');
 
-  if (resetSelection && state.mode !== 'custom') {
-    els.lessonSelect.value = state.lessonId || lastLessonId || getDefaultLessonId();
+  if (resetSelection) {
+    const fallbackLessonId = lastLessonId || getDefaultLessonId();
+    els.lessonSelect.value = fallbackLessonId;
+    if (state.mode !== 'custom') {
+      state.lessonId = fallbackLessonId;
+    }
   }
 }
 

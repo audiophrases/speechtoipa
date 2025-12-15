@@ -111,6 +111,41 @@ textarea {
   gap: 0.5rem;
 }
 
+.hidden {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.modal-dialog {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  width: min(560px, 92vw);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  z-index: 1;
+}
+
+.modal h2 {
+  margin: 0 0 0.35rem;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

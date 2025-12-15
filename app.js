@@ -254,7 +254,8 @@ function populateLessonSelect() {
   });
 
   const hasSelection = options.some((lesson) => lesson.id === state.lessonId);
-  const defaultLessonId = getDefaultLessonId();
+  const defaultLessonId = hasSelection ? state.lessonId : CUSTOM_LESSON_ID;
+  const fallbackLessonId = getDefaultLessonId();
 
   state.lessonId = hasSelection ? state.lessonId : defaultLessonId;
   els.lessonSelect.value = state.lessonId;
@@ -262,7 +263,7 @@ function populateLessonSelect() {
   if (state.lessonId !== CUSTOM_LESSON_ID) {
     lastLessonId = state.lessonId;
   } else if (!lastLessonId) {
-    lastLessonId = defaultLessonId;
+    lastLessonId = fallbackLessonId;
   }
 }
 

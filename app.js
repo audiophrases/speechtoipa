@@ -177,7 +177,7 @@ function cacheElements() {
   els.customSubmit = document.getElementById('custom-submit');
   els.customReset = document.getElementById('custom-reset');
   els.customModal = document.getElementById('custom-modal');
-  els.customBackdrop = document.querySelector('[data-close-modal]');
+  els.customDismissButtons = Array.from(document.querySelectorAll('[data-close-modal]'));
 }
 
 function createTooltips() {
@@ -371,9 +371,9 @@ function attachEventListeners() {
     }
   });
 
-  if (els.customBackdrop) {
-    els.customBackdrop.addEventListener('click', () => closeCustomModal(true));
-  }
+  (els.customDismissButtons || []).forEach((btn) => {
+    btn.addEventListener('click', () => closeCustomModal(true));
+  });
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && els.customModal && !els.customModal.classList.contains('hidden')) {

@@ -25,6 +25,20 @@
       <label for="lesson-select">Lesson:</label>
       <select id="lesson-select"></select>
     </div>
+    <div class="field custom-field">
+      <label for="custom-sentence">Custom practice</label>
+      <textarea
+        id="custom-sentence"
+        rows="3"
+        placeholder="Type or paste a sentence to practice"
+        aria-label="Custom sentence input"
+      ></textarea>
+      <div class="custom-actions">
+        <button id="custom-submit">Practice this sentence</button>
+        <button id="custom-reset" class="secondary">Back to lessons</button>
+      </div>
+      <p class="small">Submit a custom sentence without losing your lesson progress.</p>
+    </div>
   </section>
 
   <main id="app" class="card" aria-live="polite">

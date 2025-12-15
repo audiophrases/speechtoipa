@@ -56,6 +56,9 @@ const state = {
   lessonId: '',
   sentences: [],
   currentIndex: 0,
+  mode: 'lesson',
+  customSentence: '',
+  savedLessonState: null,
   recognition: null,
   recording: false,
   supportsRecognition: Boolean(SpeechRecognition),
@@ -168,6 +171,9 @@ function cacheElements() {
   els.status = document.getElementById('status');
   els.transcript = document.getElementById('transcript');
   els.feedback = document.getElementById('feedback');
+  els.customInput = document.getElementById('custom-sentence');
+  els.customSubmit = document.getElementById('custom-submit');
+  els.customReset = document.getElementById('custom-reset');
 }
 
 function createTooltips() {
@@ -288,6 +294,10 @@ function attachEventListeners() {
   });
 
   els.lessonSelect.addEventListener('change', () => {
+    if (state.mode === 'custom') {
+      state.mode = 'lesson';
+      state.savedLessonState = null;
+    }
     state.lessonId = els.lessonSelect.value;
     state.currentIndex = 0;
     saveProgress();
@@ -309,6 +319,22 @@ function attachEventListeners() {
 
   els.sentence.addEventListener('mousemove', onSentenceMouseMove);
   els.sentence.addEventListener('mouseleave', hideTooltips);
+
+  els.customSubmit.addEventListener('click', (e) => {
+    e.preventDefault();
+    const text = (els.customInput.value || '').trim();
+    if (!text) {
+      setStatus('Please enter a sentence to practice.');
+      return;
+    }
+    state.customSentence = text;
+    enterCustomMode(text);
+  });
+
+  els.customReset.addEventListener('click', (e) => {
+    e.preventDefault();
+    exitCustomMode();
+  });
 }
 
 function hydrateFromStorage() {
@@ -349,6 +375,7 @@ function normalizeLegacyCodes(saved) {
 }
 
 function saveProgress(bestScore) {
+  if (state.mode === 'custom') return;
   const raw = localStorage.getItem(STORAGE_KEY);
   let data = { progress: {} };
   try {
@@ -376,6 +403,8 @@ function updateLessonId() {
 }
 
 async function loadLesson() {
+  state.mode = 'lesson';
+  state.savedLessonState = null;
   const lang = state.targetLang;
   const lessonId = state.lessonId;
   if (!lessonId) return;
@@ -664,7 +693,12 @@ function renderCurrentSentence() {
   resetSentenceState();
   els.feedback.textContent = '';
   els.transcript.textContent = '';
-  els.status.textContent = `Sentence ${state.currentIndex + 1} / ${state.sentences.length}`;
+
+  const total = state.sentences.length;
+  els.status.textContent =
+    state.mode === 'custom'
+      ? 'Custom sentence practice'
+      : `Sentence ${state.currentIndex + 1} / ${total}`;
 }
 
 function currentSentence() {
@@ -676,6 +710,57 @@ function goToNext() {
   state.currentIndex = (state.currentIndex + 1) % state.sentences.length;
   renderCurrentSentence();
   saveProgress();
+}
+
+function enterCustomMode(text) {
+  if (!text) return;
+
+  if (state.mode !== 'custom') {
+    state.savedLessonState = {
+      sentences: state.sentences.slice(),
+      currentIndex: state.currentIndex,
+      lessonId: state.lessonId,
+    };
+  }
+
+  state.mode = 'custom';
+  state.currentIndex = 0;
+  state.sentences = [
+    {
+      id: 'custom',
+      unit: null,
+      theme: 'Custom practice',
+      title: 'Custom practice',
+      sentenceNumber: 1,
+      text,
+      translations: { [state.baseLang]: text },
+      tokens: [],
+    },
+  ];
+
+  renderCurrentSentence();
+  setStatus('Practicing your custom sentence.');
+}
+
+function exitCustomMode() {
+  if (state.mode !== 'custom') return;
+
+  state.mode = 'lesson';
+  const saved = state.savedLessonState;
+  state.savedLessonState = null;
+
+  if (saved && saved.sentences?.length) {
+    state.lessonId = saved.lessonId || state.lessonId;
+    state.sentences = saved.sentences;
+    state.currentIndex = saved.currentIndex || 0;
+    populateLessonSelect();
+    els.lessonSelect.value = state.lessonId;
+    renderCurrentSentence();
+    setStatus('Back to lesson mode.');
+    return;
+  }
+
+  loadLesson();
 }
 
 function getLangCode(l2) {

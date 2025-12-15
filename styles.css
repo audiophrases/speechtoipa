@@ -60,7 +60,7 @@ label {
   margin-bottom: 0.35rem;
 }
 
-select, button {
+select, button, textarea {
   width: 100%;
   padding: 0.65rem 0.75rem;
   border-radius: 8px;
@@ -90,6 +90,25 @@ button:disabled {
 button.secondary {
   background: transparent;
   color: var(--muted);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.custom-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.custom-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
 }
 
 .card {

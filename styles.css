@@ -124,6 +124,10 @@ textarea {
   justify-content: center;
 }
 
+.modal.hidden {
+  display: none;
+}
+
 .modal-backdrop {
   position: absolute;
   inset: 0;

@@ -20,6 +20,7 @@ const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 const CUSTOM_LESSON_ID = 'custom';
 const VOICE_STORAGE_KEY = 'speechtoipa-voices';
+const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
@@ -33,7 +34,7 @@ const MASTER_ROWS_BY_LANG = {};
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 
 const NO_TTS_SUPPORT_MESSAGE =
-  'No local text-to-speech voice found. Configure a TTS service for fallback playback.';
+  'No local text-to-speech voice found. Using fallback TTS service for playback.';
 
 const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
 const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
@@ -53,7 +54,7 @@ const SpeechRecognition =
     : null;
 
 function getTtsBaseUrl() {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined') return DEFAULT_TTS_BASE_URL;
   if (window.TTS_BASE_URL) return window.TTS_BASE_URL.replace(/\/$/, '');
   if (window.__TTS_BASE_URL__) return window.__TTS_BASE_URL__.replace(/\/$/, '');
 
@@ -64,7 +65,27 @@ function getTtsBaseUrl() {
     }
   }
 
-  return '';
+  return DEFAULT_TTS_BASE_URL;
+}
+
+function isGoogleTranslateTts(baseUrl) {
+  return /translate\.googleapis\.com/i.test(baseUrl || '');
+}
+
+function buildTtsRequestUrl(baseUrl, text, langCode) {
+  const sanitizedBase = (baseUrl || '').replace(/\/$/, '');
+  if (isGoogleTranslateTts(sanitizedBase)) {
+    const googleLang = (langCode || '').split('-')[0] || langCode || 'en';
+    const params = new URLSearchParams({
+      ie: 'UTF-8',
+      q: text,
+      tl: googleLang,
+      client: 'gtx',
+    });
+    return `${sanitizedBase}/translate_tts?${params.toString()}`;
+  }
+
+  return `${sanitizedBase}/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(langCode)}`;
 }
 
 function getTtsCacheKey(text, lang) {
@@ -210,7 +231,7 @@ async function fetchTtsAudio(text, langCode) {
   setTtsLoading(true);
   setStatus('Fetching audio from TTS service…');
   try {
-    const url = `${baseUrl}/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(langCode)}`;
+    const url = buildTtsRequestUrl(baseUrl, text, langCode);
     const res = await fetch(url);
     if (!res.ok) {
       throw new Error(`TTS service returned ${res.status}`);

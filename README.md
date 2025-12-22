@@ -8,7 +8,13 @@ Open `index.html` in a modern browser or serve the folder with any static file s
 
 ## Text-to-speech (TTS) fallback service
 
-The app first prefers the browser's built-in speech synthesis. If the browser lacks a locale-appropriate voice or does not support speech synthesis, it can fall back to a lightweight HTTP TTS service. Configure the base URL in one of these ways:
+The app first prefers the browser's built-in speech synthesis. If the browser lacks a locale-appropriate voice or does not support speech synthesis, it automatically falls back to a lightweight HTTP TTS service. Speed and responsiveness are prioritized over premium audio quality.
+
+### Default service
+By default, the app uses Google's free Translate TTS endpoint (`https://translate.googleapis.com/translate_tts`). No sign-up or API key is required. The `lang` parameter is derived from the target language (e.g. `fr` or `en`), and the endpoint returns an audio payload such as `audio/mpeg`.
+
+### Override the service URL
+If you want to point to a different service (must expose `GET /tts?text=...&lang=...`), configure the base URL in one of these ways:
 
 1. Add a meta tag in `index.html`:
    ```html

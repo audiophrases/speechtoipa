@@ -32,12 +32,35 @@ const MASTER_ROWS_BY_LANG = {};
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 
 const NO_TTS_SUPPORT_MESSAGE =
-  'Text-to-speech not supported in this browser. Try Chrome or Edge.';
+  'No local text-to-speech voice found. Configure a TTS service for fallback playback.';
+
+const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
+const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
+const ttsAudioCache = new Map();
 
 const SpeechRecognition =
   typeof window !== 'undefined'
     ? window.SpeechRecognition || window.webkitSpeechRecognition
     : null;
+
+function getTtsBaseUrl() {
+  if (typeof window === 'undefined') return '';
+  if (window.TTS_BASE_URL) return window.TTS_BASE_URL.replace(/\/$/, '');
+  if (window.__TTS_BASE_URL__) return window.__TTS_BASE_URL__.replace(/\/$/, '');
+
+  if (typeof document !== 'undefined') {
+    const meta = document.querySelector('meta[name="tts-base-url"]');
+    if (meta && meta.content) {
+      return meta.content.trim().replace(/\/$/, '');
+    }
+  }
+
+  return '';
+}
+
+function getTtsCacheKey(text, lang) {
+  return `${TTS_CACHE_PREFIX}${lang}:${text}`;
+}
 
 function isSpeechSynthesisSupported() {
   if (typeof window === 'undefined') return false;
@@ -75,13 +98,130 @@ const state = {
   recognition: null,
   recording: false,
   supportsSpeechSynthesis: isSpeechSynthesisSupported(),
+  supportsTtsService: Boolean(getTtsBaseUrl()),
   supportsRecognition: Boolean(SpeechRecognition),
   manualStopRequested: false,
   sentenceComplete: false,
   shouldAutoRestartRecognition: false,
+  ttsLoading: false,
 };
 
 const els = {};
+
+function setTtsLoading(isLoading) {
+  state.ttsLoading = isLoading;
+  updateSpeechSynthesisState();
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const res = reader.result || '';
+      const base64 = res.toString().split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(data, mimeType) {
+  let byteChars;
+  if (typeof atob === 'function') {
+    byteChars = atob(data);
+  } else if (typeof Buffer !== 'undefined') {
+    byteChars = Buffer.from(data, 'base64').toString('binary');
+  } else {
+    throw new Error('No base64 decoder available');
+  }
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType || 'audio/mpeg' });
+}
+
+function loadCachedTts(cacheKey) {
+  if (ttsAudioCache.has(cacheKey)) {
+    return ttsAudioCache.get(cacheKey);
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(cacheKey);
+      if (stored) {
+        const [mimeType, data] = stored.split('|');
+        const blob = base64ToBlob(data, mimeType);
+        ttsAudioCache.set(cacheKey, blob);
+        return blob;
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to read cached TTS audio', err);
+  }
+
+  return null;
+}
+
+async function cacheTts(cacheKey, blob, originalText) {
+  ttsAudioCache.set(cacheKey, blob);
+  if (!originalText || originalText.length > TTS_LOCAL_CACHE_CHAR_LIMIT) return;
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const base64 = await blobToBase64(blob);
+      const mimeType = blob.type || 'audio/mpeg';
+      localStorage.setItem(cacheKey, `${mimeType}|${base64}`);
+    }
+  } catch (err) {
+    console.warn('Unable to persist TTS audio to localStorage', err);
+  }
+}
+
+async function fetchTtsAudio(text, langCode) {
+  const baseUrl = getTtsBaseUrl();
+  if (!baseUrl) {
+    throw new Error('TTS service not configured');
+  }
+
+  const cacheKey = getTtsCacheKey(text, langCode);
+  const cached = loadCachedTts(cacheKey);
+  if (cached) return cached;
+
+  setTtsLoading(true);
+  setStatus('Fetching audio from TTS service…');
+  try {
+    const url = `${baseUrl}/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(langCode)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`TTS service returned ${res.status}`);
+    }
+    const blob = await res.blob();
+    await cacheTts(cacheKey, blob, text);
+    return blob;
+  } finally {
+    setTtsLoading(false);
+  }
+}
+
+async function playTtsBlob(blob, rate = 1.0) {
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.playbackRate = rate;
+
+  try {
+    await audio.play();
+    setStatus('Playing audio from TTS service.');
+  } catch (err) {
+    console.error('Failed to play fetched audio', err);
+    setStatus('Could not play fetched audio.');
+  } finally {
+    audio.onended = () => URL.revokeObjectURL(url);
+  }
+}
 
 function parseCsvToObjects(text) {
   const rows = [];
@@ -948,52 +1088,94 @@ function getVoiceForLang(langCode) {
     if (voice) return voice;
   }
 
-  // 4) General fallback – first English or first voice
-  voice = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-  return voice || voices[0];
-}
-
-function speakSentence(text, langCode, rate = 1.0) {
-  if (!isSpeechSynthesisSupported()) {
-    state.supportsSpeechSynthesis = false;
-    updateSpeechSynthesisState({ announce: true });
-    return;
+  // 4) General fallback – only allow English when that is the requested language
+  if (base === 'en') {
+    voice = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+    if (voice) return voice;
   }
 
+  return null;
+}
+
+async function speakSentence(text, langCode, rate = 1.0) {
   if (!text) {
     setStatus('Nothing to play for this sentence.');
     return;
   }
 
-  const synth = window.speechSynthesis;
-  const speak = () => {
+  const synthSupported = isSpeechSynthesisSupported();
+  const synth = synthSupported ? window.speechSynthesis : null;
+  const baseLang = (langCode || '').split('-')[0];
+  const ttsAvailable = Boolean(getTtsBaseUrl());
+  state.supportsTtsService = ttsAvailable;
+
+  const speakWithService = async () => {
+    try {
+      const blob = await fetchTtsAudio(text, langCode);
+      await playTtsBlob(blob, rate);
+    } catch (err) {
+      console.error('TTS service request failed', err);
+      setStatus('TTS service unavailable. Check configuration and try again.');
+    }
+  };
+
+  const speakWithVoice = (voice) => {
+    if (!synth) return;
     const u = new SpeechSynthesisUtterance(text);
     u.lang = langCode;
-
-    const voice = getVoiceForLang(langCode);
+    u.rate = rate;
     if (voice) {
       u.voice = voice;
     }
-
-    u.rate = rate;
     if (synth.paused) synth.resume();
     synth.cancel();
     synth.speak(u);
   };
 
-  const voices = synth.getVoices();
-  if (!voices || !voices.length) {
-    const onVoicesReady = () => {
-      synth.removeEventListener('voiceschanged', onVoicesReady);
-      speak();
-    };
-    synth.addEventListener('voiceschanged', onVoicesReady);
-    synth.getVoices();
-    setStatus('Loading voices for playback…');
+  if (synthSupported) {
+    const voices = synth.getVoices();
+    if (!voices || !voices.length) {
+      if (ttsAvailable) {
+        await speakWithService();
+        return;
+      }
+      const onVoicesReady = () => {
+        synth.removeEventListener('voiceschanged', onVoicesReady);
+        speakSentence(text, langCode, rate);
+      };
+      synth.addEventListener('voiceschanged', onVoicesReady);
+      synth.getVoices();
+      setStatus('Loading voices for playback…');
+      return;
+    }
+
+    const voice = getVoiceForLang(langCode);
+    const hasLocaleVoice =
+      voice && voice.lang && voice.lang.toLowerCase().startsWith(baseLang.toLowerCase());
+
+    if (voice && hasLocaleVoice) {
+      speakWithVoice(voice);
+      return;
+    }
+
+    if (ttsAvailable) {
+      await speakWithService();
+      return;
+    }
+
+    if (voice) {
+      speakWithVoice(voice);
+      return;
+    }
+  }
+
+  if (ttsAvailable) {
+    await speakWithService();
     return;
   }
 
-  speak();
+  state.supportsSpeechSynthesis = false;
+  updateSpeechSynthesisState({ announce: true });
 }
 
 function speakCurrent(rate = 1) {
@@ -1143,15 +1325,16 @@ function restartRecognitionSession() {
 
 function updateSpeechSynthesisState({ announce = false } = {}) {
   state.supportsSpeechSynthesis = isSpeechSynthesisSupported();
-  const supported = state.supportsSpeechSynthesis;
+  state.supportsTtsService = Boolean(getTtsBaseUrl());
+  const supported = state.supportsSpeechSynthesis || state.supportsTtsService;
 
   if (els.play) {
-    els.play.disabled = !supported;
+    els.play.disabled = !supported || state.ttsLoading;
     els.play.title = supported ? '' : NO_TTS_SUPPORT_MESSAGE;
   }
 
   if (els.slow) {
-    els.slow.disabled = !supported;
+    els.slow.disabled = !supported || state.ttsLoading;
     els.slow.title = supported ? '' : NO_TTS_SUPPORT_MESSAGE;
   }
 

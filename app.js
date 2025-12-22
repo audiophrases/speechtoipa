@@ -62,6 +62,11 @@ function getTtsCacheKey(text, lang) {
   return `${TTS_CACHE_PREFIX}${lang}:${text}`;
 }
 
+function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+
 function isSpeechSynthesisSupported() {
   if (typeof window === 'undefined') return false;
   return Boolean(window.speechSynthesis) && 'SpeechSynthesisUtterance' in window;
@@ -212,15 +217,26 @@ async function playTtsBlob(blob, rate = 1.0) {
   const audio = new Audio(url);
   audio.playbackRate = rate;
 
+  const playbackFinished = new Promise((resolve) => {
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+  });
+
   try {
     await audio.play();
     setStatus('Playing audio from TTS service.');
   } catch (err) {
     console.error('Failed to play fetched audio', err);
     setStatus('Could not play fetched audio.');
-  } finally {
-    audio.onended = () => URL.revokeObjectURL(url);
   }
+
+  await playbackFinished;
 }
 
 function parseCsvToObjects(text) {
@@ -755,6 +771,7 @@ async function loadLesson() {
   setStatus(
     `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}${ttsNotice}`
   );
+  playbackQueue.warmVoicesForLang(getLangCode(state.targetLang));
 }
 
 function loadProgressForLesson() {
@@ -1097,85 +1114,176 @@ function getVoiceForLang(langCode) {
   return null;
 }
 
+const playbackQueue = createPlaybackQueue();
+
+function createPlaybackQueue() {
+  const MAX_RETRIES = 2;
+  const warmups = new Map();
+  const isMobile = isMobileDevice();
+  let isWarming = false;
+  let processing = false;
+  let queue = [];
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function waitForVoicesReady() {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    const voices = synth.getVoices();
+    if (voices && voices.length) return;
+
+    await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        synth.removeEventListener('voiceschanged', handleVoicesChanged);
+        resolve();
+      }, 1200);
+
+      function handleVoicesChanged() {
+        clearTimeout(timer);
+        synth.removeEventListener('voiceschanged', handleVoicesChanged);
+        resolve();
+      }
+
+      synth.addEventListener('voiceschanged', handleVoicesChanged);
+      synth.getVoices();
+    });
+  }
+
+  async function warmVoicesForLang(langCode) {
+    if (!isSpeechSynthesisSupported()) return null;
+    if (warmups.has(langCode)) return warmups.get(langCode);
+
+    const promise = (async () => {
+      isWarming = true;
+      setStatus('Preparing audio…');
+      try {
+        await waitForVoicesReady();
+        return getVoiceForLang(langCode);
+      } finally {
+        isWarming = false;
+      }
+    })();
+
+    warmups.set(langCode, promise);
+    return promise;
+  }
+
+  async function waitForSynthAvailability() {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    if (!isMobile) {
+      synth.cancel();
+      return;
+    }
+
+    while (synth.speaking || synth.pending) {
+      await wait(150);
+    }
+  }
+
+  async function speakWithVoice(item) {
+    const synth = window.speechSynthesis;
+    if (!synth) return { success: false, retry: false };
+
+    const voice = await warmVoicesForLang(item.langCode);
+    if (!voice) {
+      return { success: false, retry: item.attempt < MAX_RETRIES };
+    }
+
+    await waitForSynthAvailability();
+
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(item.text);
+      utterance.lang = item.langCode;
+      utterance.rate = item.rate;
+      utterance.voice = voice;
+
+      utterance.onend = () => resolve({ success: true, retry: false });
+      utterance.onerror = (event) => {
+        const retryable = event.error === 'interrupted' || event.error === 'canceled';
+        resolve({ success: false, retry: retryable });
+      };
+
+      if (synth.paused) synth.resume();
+      synth.speak(utterance);
+    });
+  }
+
+  async function speakWithService(item) {
+    try {
+      const blob = await fetchTtsAudio(item.text, item.langCode);
+      await playTtsBlob(blob, item.rate);
+      return true;
+    } catch (err) {
+      console.error('TTS service request failed', err);
+      setStatus('TTS service unavailable. Check configuration and try again.');
+      return false;
+    }
+  }
+
+  async function handleItem(item) {
+    const synthSupported = isSpeechSynthesisSupported();
+    const ttsAvailable = Boolean(getTtsBaseUrl());
+    let success = false;
+
+    state.supportsTtsService = ttsAvailable;
+
+    if (synthSupported) {
+      const voiceResult = await speakWithVoice(item);
+      success = voiceResult.success;
+
+      if (!success && voiceResult.retry && item.attempt < MAX_RETRIES) {
+        queue.unshift({ ...item, attempt: item.attempt + 1 });
+        await wait(200);
+        return;
+      }
+    }
+
+    if (!success && ttsAvailable) {
+      success = await speakWithService(item);
+    }
+
+    if (!success && synthSupported && !ttsAvailable) {
+      state.supportsSpeechSynthesis = false;
+      updateSpeechSynthesisState({ announce: true });
+    }
+  }
+
+  async function processQueue() {
+    if (processing || !queue.length) return;
+    processing = true;
+
+    while (queue.length) {
+      const item = queue.shift();
+      await handleItem(item);
+    }
+
+    processing = false;
+  }
+
+  return {
+    enqueue(item) {
+      queue.push({ ...item, attempt: item.attempt || 0 });
+      processQueue();
+    },
+    warmVoicesForLang,
+    isWarming() {
+      return isWarming;
+    },
+  };
+}
+
 async function speakSentence(text, langCode, rate = 1.0) {
   if (!text) {
     setStatus('Nothing to play for this sentence.');
     return;
   }
 
-  const synthSupported = isSpeechSynthesisSupported();
-  const synth = synthSupported ? window.speechSynthesis : null;
-  const baseLang = (langCode || '').split('-')[0];
-  const ttsAvailable = Boolean(getTtsBaseUrl());
-  state.supportsTtsService = ttsAvailable;
-
-  const speakWithService = async () => {
-    try {
-      const blob = await fetchTtsAudio(text, langCode);
-      await playTtsBlob(blob, rate);
-    } catch (err) {
-      console.error('TTS service request failed', err);
-      setStatus('TTS service unavailable. Check configuration and try again.');
-    }
-  };
-
-  const speakWithVoice = (voice) => {
-    if (!synth) return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = langCode;
-    u.rate = rate;
-    if (voice) {
-      u.voice = voice;
-    }
-    if (synth.paused) synth.resume();
-    synth.cancel();
-    synth.speak(u);
-  };
-
-  if (synthSupported) {
-    const voices = synth.getVoices();
-    if (!voices || !voices.length) {
-      if (ttsAvailable) {
-        await speakWithService();
-        return;
-      }
-      const onVoicesReady = () => {
-        synth.removeEventListener('voiceschanged', onVoicesReady);
-        speakSentence(text, langCode, rate);
-      };
-      synth.addEventListener('voiceschanged', onVoicesReady);
-      synth.getVoices();
-      setStatus('Loading voices for playback…');
-      return;
-    }
-
-    const voice = getVoiceForLang(langCode);
-    const hasLocaleVoice =
-      voice && voice.lang && voice.lang.toLowerCase().startsWith(baseLang.toLowerCase());
-
-    if (voice && hasLocaleVoice) {
-      speakWithVoice(voice);
-      return;
-    }
-
-    if (ttsAvailable) {
-      await speakWithService();
-      return;
-    }
-
-    if (voice) {
-      speakWithVoice(voice);
-      return;
-    }
-  }
-
-  if (ttsAvailable) {
-    await speakWithService();
-    return;
-  }
-
-  state.supportsSpeechSynthesis = false;
-  updateSpeechSynthesisState({ announce: true });
+  await playbackQueue.warmVoicesForLang(langCode);
+  state.supportsTtsService = Boolean(getTtsBaseUrl());
+  playbackQueue.enqueue({ text, langCode, rate });
 }
 
 function speakCurrent(rate = 1) {

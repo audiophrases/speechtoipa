@@ -982,7 +982,11 @@ function initRecognition() {
     }
 
     transcript = transcript.trim();
-    updateLiveFeedback(transcript);
+
+    const lastResult = event.results[event.results.length - 1];
+    const isFinalResult = Boolean(lastResult && lastResult.isFinal);
+
+    updateLiveFeedback(transcript, { isFinalResult });
   };
 
   state.recognition.onstart = () => {
@@ -1220,7 +1224,8 @@ function updateWordSpanClasses() {
   });
 }
 
-function checkIfSentenceCompleteAndStop() {
+function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
+  if (!allowAutoStop) return;
   if (!wordStatus.length) return;
   const allCorrect = wordStatus.every((s) => s === 'correct');
   if (allCorrect && state.recognition) {
@@ -1237,7 +1242,7 @@ function checkIfSentenceCompleteAndStop() {
   }
 }
 
-function updateLiveFeedback(transcript) {
+function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
     transcript,
     targetTokens
@@ -1287,7 +1292,7 @@ function updateLiveFeedback(transcript) {
     els.transcript.textContent = filteredTranscript;
   }
 
-  checkIfSentenceCompleteAndStop();
+  checkIfSentenceCompleteAndStop({ allowAutoStop: isFinalResult });
 }
 
 function finalizeScore(transcript) {

@@ -20,6 +20,11 @@
       <select id="target-lang"></select>
     </div>
     <div class="field">
+      <label for="voice-select">Voice for target language:</label>
+      <select id="voice-select"></select>
+      <p id="voice-note" class="small"></p>
+    </div>
+    <div class="field">
       <label for="base-lang">Base language (L1):</label>
       <select id="base-lang"></select>
     </div>
@@ -38,6 +43,7 @@
       <button id="stop-btn" class="secondary">⏹ Stop</button>
       <button id="next-btn" class="secondary">Next sentence ➡</button>
     </div>
+    <div id="playback-warnings" class="status status-inline" role="status" aria-live="polite"></div>
     <div id="status" class="status"></div>
     <div id="transcript" class="transcript" aria-live="polite"></div>
     <div id="feedback" class="feedback" aria-live="polite"></div>

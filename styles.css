@@ -217,6 +217,11 @@ textarea {
   color: var(--muted);
 }
 
+.status-inline {
+  margin-top: -0.35rem;
+  margin-bottom: 0.25rem;
+}
+
 .transcript {
   font-size: 0.95rem;
   color: var(--muted);

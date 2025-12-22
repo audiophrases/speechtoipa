@@ -19,6 +19,7 @@ const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 const CUSTOM_LESSON_ID = 'custom';
+const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
@@ -37,6 +38,14 @@ const NO_TTS_SUPPORT_MESSAGE =
 const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
 const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
 const ttsAudioCache = new Map();
+const AUTO_VOICE_VALUE = 'auto';
+const CURATED_VOICE_PRIORITIES = {
+  ar: ['ar-MA', 'ar-SA', 'ar-EG', 'ar'],
+  ca: ['ca-ES', 'es-ES'],
+  en: ['en-US', 'en-GB', 'en-AU'],
+  fr: ['fr-CA', 'fr-FR', 'fr-BE'],
+  it: ['it-IT'],
+};
 
 const SpeechRecognition =
   typeof window !== 'undefined'
@@ -75,6 +84,7 @@ function isSpeechSynthesisSupported() {
 if (typeof window !== 'undefined' && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
     window.speechSynthesis.getVoices();
+    buildVoiceMap();
     warnIfArabicVoiceMissing();
   };
 }
@@ -112,6 +122,8 @@ const state = {
 };
 
 const els = {};
+let normalizedVoices = [];
+let voiceSelections = {};
 
 function setTtsLoading(isLoading) {
   state.ttsLoading = isLoading;
@@ -327,6 +339,7 @@ if (typeof document !== 'undefined') {
     hydrateSelections();
     attachEventListeners();
     hydrateFromStorage();
+    buildVoiceMap();
     await loadLessonManifest();
     updateLessonId();
     await loadLesson();
@@ -336,6 +349,8 @@ if (typeof document !== 'undefined') {
 
 function cacheElements() {
   els.targetSelect = document.getElementById('target-lang');
+  els.voiceSelect = document.getElementById('voice-select');
+  els.voiceNote = document.getElementById('voice-note');
   els.baseSelect = document.getElementById('base-lang');
   els.lessonSelect = document.getElementById('lesson-select');
   els.sentence = document.getElementById('sentence');
@@ -344,6 +359,7 @@ function cacheElements() {
   els.record = document.getElementById('record-btn');
   els.stop = document.getElementById('stop-btn');
   els.next = document.getElementById('next-btn');
+  els.playbackWarnings = document.getElementById('playback-warnings');
   els.status = document.getElementById('status');
   els.transcript = document.getElementById('transcript');
   els.feedback = document.getElementById('feedback');
@@ -374,6 +390,7 @@ function createTooltips() {
 function hydrateSelections() {
   populateSelect(els.targetSelect, TARGET_LANGS, state.targetLang);
   populateSelect(els.baseSelect, BASE_LANGS, state.baseLang);
+  populateVoiceSelect();
 }
 
 function populateSelect(select, options, selected) {
@@ -385,6 +402,77 @@ function populateSelect(select, options, selected) {
     if (opt.code === selected) option.selected = true;
     select.appendChild(option);
   });
+}
+
+function getStoredVoices() {
+  try {
+    const raw = localStorage.getItem(VOICE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistVoices() {
+  try {
+    localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceSelections));
+  } catch {
+    /* ignore */
+  }
+}
+
+function normalizeVoiceList(voices) {
+  if (!Array.isArray(voices)) return [];
+  return voices
+    .map((v) => ({
+      name: v.name,
+      lang: v.lang,
+      deviceSupport: Boolean(v.localService),
+    }))
+    .sort((a, b) => {
+      if (a.lang === b.lang) return a.name.localeCompare(b.name);
+      return a.lang.localeCompare(b.lang);
+    });
+}
+
+function populateVoiceSelect() {
+  if (!els.voiceSelect) return;
+
+  const options = [{ value: AUTO_VOICE_VALUE, label: 'Auto (recommended)' }];
+  normalizedVoices.forEach((v) => {
+    options.push({
+      value: `${v.lang}|${v.name}`,
+      label: `${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''})`,
+    });
+  });
+
+  els.voiceSelect.innerHTML = '';
+  options.forEach((opt) => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    els.voiceSelect.appendChild(option);
+  });
+
+  const stored = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
+  els.voiceSelect.value = stored;
+  updateVoiceNote();
+}
+
+function updateVoiceNote() {
+  if (!els.voiceNote) return;
+  if (!normalizedVoices.length) {
+    els.voiceNote.textContent = 'Voices will appear after your browser loads them.';
+    return;
+  }
+
+  const selection = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
+  if (selection === AUTO_VOICE_VALUE) {
+    els.voiceNote.textContent = 'Auto picks the best match for each language.';
+  } else {
+    const [, name] = selection.split('|');
+    els.voiceNote.textContent = `Using voice: ${name}`;
+  }
 }
 
 function getLessonsForLang(lang) {
@@ -492,11 +580,13 @@ async function loadLessonManifest() {
 function attachEventListeners() {
   els.targetSelect.addEventListener('change', async () => {
     state.targetLang = els.targetSelect.value;
+    populateVoiceSelect();
     await loadLessonManifest();
     updateLessonId();
     saveProgress();
     loadLesson();
     warnIfArabicVoiceMissing();
+    updatePlaybackWarnings();
   });
 
   els.baseSelect.addEventListener('change', () => {
@@ -553,6 +643,13 @@ function attachEventListeners() {
     if (event.key === 'Escape' && els.customModal && !els.customModal.classList.contains('hidden')) {
       closeCustomModal(true);
     }
+  });
+
+  els.voiceSelect?.addEventListener('change', () => {
+    voiceSelections[state.targetLang] = els.voiceSelect.value;
+    persistVoices();
+    updateVoiceNote();
+    updatePlaybackWarnings();
   });
 }
 
@@ -618,6 +715,9 @@ function hydrateFromStorage() {
   } catch (err) {
     console.error('Failed to parse saved progress', err);
   }
+
+  voiceSelections = getStoredVoices();
+  populateVoiceSelect();
 }
 
 function normalizeLegacyCodes(saved) {
@@ -783,6 +883,18 @@ function loadProgressForLesson() {
   } catch {
     return null;
   }
+}
+
+function buildVoiceMap() {
+  if (!window.speechSynthesis) {
+    normalizedVoices = [];
+    return;
+  }
+
+  const voices = window.speechSynthesis.getVoices();
+  normalizedVoices = normalizeVoiceList(voices);
+  populateVoiceSelect();
+  updatePlaybackWarnings();
 }
 
 function onSentenceMouseMove(e) {
@@ -1090,28 +1202,30 @@ function getVoiceForLang(langCode) {
   const voices = window.speechSynthesis.getVoices();
   if (!voices || !voices.length) return null;
 
-  // 1) Exact match (e.g. 'ar-MA')
-  let voice = voices.find((v) => v.lang === langCode);
-  if (voice) return voice;
+  const storedSelection = voiceSelections[state.targetLang];
+  if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
+    const [storedLang, storedName] = storedSelection.split('|');
+    const voice = voices.find((v) => v.lang === storedLang && v.name === storedName);
+    if (voice) return voice;
+  }
 
-  // 2) Match by base language (e.g. 'ar' from 'ar-MA')
   const base = langCode.split('-')[0];
-  voice = voices.find((v) => v.lang.toLowerCase().startsWith(base.toLowerCase()));
-  if (voice) return voice;
+  const voiceByLangMatch = voices.find((v) => v.lang === langCode);
+  if (voiceByLangMatch) return voiceByLangMatch;
 
-  // 3) Fallback: any Arabic voice if we’re using Darija
-  if (base === 'ar') {
-    voice = voices.find((v) => v.lang.toLowerCase().startsWith('ar'));
-    if (voice) return voice;
+  const prefixMatch = voices.find((v) => v.lang.toLowerCase().startsWith(base.toLowerCase()));
+  if (prefixMatch) return prefixMatch;
+
+  const curatedList = CURATED_VOICE_PRIORITIES[base] || [];
+  for (const candidate of curatedList) {
+    const byFull = voices.find((v) => v.lang === candidate);
+    if (byFull) return byFull;
+    const byPrefix = voices.find((v) => v.lang.toLowerCase().startsWith(candidate.toLowerCase()));
+    if (byPrefix) return byPrefix;
   }
 
-  // 4) General fallback – only allow English when that is the requested language
-  if (base === 'en') {
-    voice = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-    if (voice) return voice;
-  }
-
-  return null;
+  const fallbackLang = voices.find((v) => v.lang === voices[0]?.lang);
+  return fallbackLang || null;
 }
 
 const playbackQueue = createPlaybackQueue();
@@ -1284,6 +1398,7 @@ async function speakSentence(text, langCode, rate = 1.0) {
   await playbackQueue.warmVoicesForLang(langCode);
   state.supportsTtsService = Boolean(getTtsBaseUrl());
   playbackQueue.enqueue({ text, langCode, rate });
+  updatePlaybackWarnings();
 }
 
 function speakCurrent(rate = 1) {
@@ -1431,6 +1546,66 @@ function restartRecognitionSession() {
   }, 150);
 }
 
+function buildVoiceWarning(targetLangCode) {
+  if (!els.playbackWarnings) return '';
+  const langCode = getLangCode(targetLangCode);
+  const base = langCode.split('-')[0];
+  const selection = voiceSelections[targetLangCode];
+
+  if (!window.speechSynthesis) {
+    return 'No local text-to-speech is available; playback will use the configured TTS service if set.';
+  }
+
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || !voices.length) return '';
+
+  const preferred = selection && selection !== AUTO_VOICE_VALUE ? selection.split('|')[0] : null;
+  const matched = getVoiceForLang(langCode);
+  if (!matched) {
+    return 'No matching voice installed for this language.';
+  }
+
+  const matchedBase = matched.lang.split('-')[0].toLowerCase();
+  const localeMismatch = matched.lang !== langCode;
+  const baseMismatch = matchedBase !== base.toLowerCase();
+
+  if (preferred && matched.lang !== preferred && matchedBase !== preferred.split('-')[0]) {
+    return `Selected voice unavailable; using ${matched.name} (${matched.lang}).`;
+  }
+
+  if (localeMismatch) {
+    return `No ${langCode} voice installed; using ${matched.lang}.`;
+  }
+
+  if (baseMismatch) {
+    return `No ${base} voice installed; using ${matched.lang}.`;
+  }
+
+  return '';
+}
+
+function buildBrowserRecommendation() {
+  if (typeof navigator === 'undefined') return '';
+  const ua = navigator.userAgent.toLowerCase();
+  const isChrome = ua.includes('chrome') && !ua.includes('edg');
+  const isEdge = ua.includes('edg');
+  if (isChrome || isEdge) return '';
+  return 'For best playback, use the latest Chrome or Microsoft Edge.';
+}
+
+function updatePlaybackWarnings() {
+  if (!els.playbackWarnings) return;
+  const parts = [];
+  const voiceWarning = buildVoiceWarning(state.targetLang);
+  if (voiceWarning) parts.push(voiceWarning);
+  const playbackUnavailable = !state.supportsSpeechSynthesis && !state.supportsTtsService;
+  if (voiceWarning || playbackUnavailable) {
+    const browserWarning = buildBrowserRecommendation();
+    if (browserWarning) parts.push(browserWarning);
+  }
+  els.playbackWarnings.textContent = parts.join(' ');
+}
+
 function updateSpeechSynthesisState({ announce = false } = {}) {
   state.supportsSpeechSynthesis = isSpeechSynthesisSupported();
   state.supportsTtsService = Boolean(getTtsBaseUrl());
@@ -1449,6 +1624,8 @@ function updateSpeechSynthesisState({ announce = false } = {}) {
   if (!supported && announce) {
     setStatus(NO_TTS_SUPPORT_MESSAGE);
   }
+
+  updatePlaybackWarnings();
 }
 
 function normalizeWord(w) {

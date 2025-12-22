@@ -31,10 +31,18 @@ const MASTER_CSV_URLS = {
 const MASTER_ROWS_BY_LANG = {};
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 
+const NO_TTS_SUPPORT_MESSAGE =
+  'Text-to-speech not supported in this browser. Try Chrome or Edge.';
+
 const SpeechRecognition =
   typeof window !== 'undefined'
     ? window.SpeechRecognition || window.webkitSpeechRecognition
     : null;
+
+function isSpeechSynthesisSupported() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.speechSynthesis) && 'SpeechSynthesisUtterance' in window;
+}
 
 if (typeof window !== 'undefined' && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
@@ -65,6 +73,7 @@ const state = {
   savedLessonState: null,
   recognition: null,
   recording: false,
+  supportsSpeechSynthesis: isSpeechSynthesisSupported(),
   supportsRecognition: Boolean(SpeechRecognition),
 };
 
@@ -154,12 +163,13 @@ if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', async () => {
     cacheElements();
     createTooltips();
+    updateSpeechSynthesisState();
     hydrateSelections();
     attachEventListeners();
     hydrateFromStorage();
     await loadLessonManifest();
     updateLessonId();
-    loadLesson();
+    await loadLesson();
     warnIfArabicVoiceMissing();
   });
 }
@@ -596,8 +606,10 @@ async function loadLesson() {
 
   renderCurrentSentence();
   const lessonMeta = availableLessons.find((l) => l.id === lessonId) || {};
+  updateSpeechSynthesisState();
+  const ttsNotice = state.supportsSpeechSynthesis ? '' : ` • ${NO_TTS_SUPPORT_MESSAGE}`;
   setStatus(
-    `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}`
+    `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}${ttsNotice}`
   );
 }
 
@@ -938,6 +950,12 @@ function getVoiceForLang(langCode) {
 }
 
 function speakSentence(text, langCode, rate = 1.0) {
+  if (!isSpeechSynthesisSupported()) {
+    state.supportsSpeechSynthesis = false;
+    updateSpeechSynthesisState({ announce: true });
+    return;
+  }
+
   const u = new SpeechSynthesisUtterance(text);
   u.lang = langCode;
 
@@ -1044,6 +1062,25 @@ function updateRecordState() {
   els.stop.disabled = !state.recording;
   if (!state.supportsRecognition) {
     els.status.textContent = 'Speech recognition not available in this browser.';
+  }
+}
+
+function updateSpeechSynthesisState({ announce = false } = {}) {
+  state.supportsSpeechSynthesis = isSpeechSynthesisSupported();
+  const supported = state.supportsSpeechSynthesis;
+
+  if (els.play) {
+    els.play.disabled = !supported;
+    els.play.title = supported ? '' : NO_TTS_SUPPORT_MESSAGE;
+  }
+
+  if (els.slow) {
+    els.slow.disabled = !supported;
+    els.slow.title = supported ? '' : NO_TTS_SUPPORT_MESSAGE;
+  }
+
+  if (!supported && announce) {
+    setStatus(NO_TTS_SUPPORT_MESSAGE);
   }
 }
 

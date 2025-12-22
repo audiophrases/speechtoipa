@@ -978,7 +978,6 @@ function initRecognition() {
     }
 
     transcript = transcript.trim();
-    lastTranscript = transcript;
     updateLiveFeedback(transcript);
   };
 
@@ -1054,6 +1053,56 @@ function tokenizeText(t) {
   return normalizeWord(t)
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function buildMaxConsecutiveRuns(tokens) {
+  const maxRuns = new Map();
+  let prev = null;
+  let runLength = 0;
+
+  tokens.forEach((token) => {
+    if (token === prev) {
+      runLength += 1;
+    } else {
+      prev = token;
+      runLength = 1;
+    }
+
+    const currentMax = maxRuns.get(token) || 0;
+    if (runLength > currentMax) {
+      maxRuns.set(token, runLength);
+    }
+  });
+
+  return maxRuns;
+}
+
+function filterUnexpectedRepeats(transcript, targetTokensForSentence) {
+  const spokenTokens = tokenizeText(transcript);
+  const allowedRuns = buildMaxConsecutiveRuns(targetTokensForSentence || []);
+
+  const filteredTokens = [];
+  let prev = null;
+  let runLength = 0;
+
+  spokenTokens.forEach((token) => {
+    if (token === prev) {
+      runLength += 1;
+    } else {
+      prev = token;
+      runLength = 1;
+    }
+
+    const allowed = allowedRuns.get(token) || 1;
+    if (runLength <= allowed) {
+      filteredTokens.push(token);
+    }
+  });
+
+  return {
+    filteredTokens,
+    filteredTranscript: filteredTokens.join(' '),
+  };
 }
 
 function levenshtein(a, b) {
@@ -1169,8 +1218,14 @@ function checkIfSentenceCompleteAndStop() {
 }
 
 function updateLiveFeedback(transcript) {
-  const spokenTokens = tokenizeText(transcript);
-  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens);
+  const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
+    transcript,
+    targetTokens
+  );
+
+  lastTranscript = filteredTranscript;
+
+  const matches = findMatchesForTargetTokens(targetTokens, filteredTokens);
   const prevStatus = [...wordStatus];
   const n = targetTokens.length;
 
@@ -1209,15 +1264,20 @@ function updateLiveFeedback(transcript) {
   updateWordSpanClasses();
 
   if (els.transcript) {
-    els.transcript.textContent = transcript;
+    els.transcript.textContent = filteredTranscript;
   }
 
   checkIfSentenceCompleteAndStop();
 }
 
 function finalizeScore(transcript) {
-  const spokenTokens = tokenizeText(transcript);
-  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens);
+  const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
+    transcript,
+    targetTokens
+  );
+  lastTranscript = filteredTranscript;
+
+  const matches = findMatchesForTargetTokens(targetTokens, filteredTokens);
   const correct = matches.filter(Boolean).length;
 
   const score = Math.round((correct / (targetTokens.length || 1)) * 100);

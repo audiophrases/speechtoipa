@@ -62,6 +62,7 @@ let sentenceTooltipTimer = null;
 let currentTooltipTarget = null;
 let hasWarnedAboutArabicVoice = false;
 let lastLessonId = '';
+let recognitionRestartTimer = null;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -75,6 +76,9 @@ const state = {
   recording: false,
   supportsSpeechSynthesis: isSpeechSynthesisSupported(),
   supportsRecognition: Boolean(SpeechRecognition),
+  manualStopRequested: false,
+  sentenceComplete: false,
+  shouldAutoRestartRecognition: false,
 };
 
 const els = {};
@@ -956,17 +960,40 @@ function speakSentence(text, langCode, rate = 1.0) {
     return;
   }
 
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = langCode;
-
-  const voice = getVoiceForLang(langCode);
-  if (voice) {
-    u.voice = voice;
+  if (!text) {
+    setStatus('Nothing to play for this sentence.');
+    return;
   }
 
-  u.rate = rate;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(u);
+  const synth = window.speechSynthesis;
+  const speak = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = langCode;
+
+    const voice = getVoiceForLang(langCode);
+    if (voice) {
+      u.voice = voice;
+    }
+
+    u.rate = rate;
+    if (synth.paused) synth.resume();
+    synth.cancel();
+    synth.speak(u);
+  };
+
+  const voices = synth.getVoices();
+  if (!voices || !voices.length) {
+    const onVoicesReady = () => {
+      synth.removeEventListener('voiceschanged', onVoicesReady);
+      speak();
+    };
+    synth.addEventListener('voiceschanged', onVoicesReady);
+    synth.getVoices();
+    setStatus('Loading voices for playback…');
+    return;
+  }
+
+  speak();
 }
 
 function speakCurrent(rate = 1) {
@@ -1015,16 +1042,32 @@ function initRecognition() {
 
   state.recognition.onerror = (event) => {
     console.error('Recognition error', event.error);
-    setStatus(`Recognition error: ${event.error}`);
     state.recording = false;
     updateRecordState();
+
+    if (
+      state.shouldAutoRestartRecognition &&
+      !state.manualStopRequested &&
+      !state.sentenceComplete &&
+      (event.error === 'no-speech' || event.error === 'aborted')
+    ) {
+      setStatus('No speech detected, still listening...');
+      restartRecognitionSession();
+      return;
+    }
+
+    setStatus(`Recognition error: ${event.error}`);
   };
 
   state.recognition.onend = () => {
     state.recording = false;
     updateRecordState();
-    if (lastTranscript !== null) {
+
+    const shouldFinalize = state.manualStopRequested || state.sentenceComplete;
+    if (shouldFinalize && lastTranscript !== null) {
       finalizeScore(lastTranscript);
+    } else if (state.shouldAutoRestartRecognition && !state.manualStopRequested) {
+      restartRecognitionSession();
     }
   };
 
@@ -1042,6 +1085,10 @@ function startRecording() {
     els.transcript.textContent = '';
     els.feedback.textContent = '';
     resetSentenceState();
+    state.manualStopRequested = false;
+    state.sentenceComplete = false;
+    state.shouldAutoRestartRecognition = true;
+    clearRecognitionRestartTimer();
     state.recognition.lang = getLangCode(state.targetLang);
     state.recognition.start();
   } catch (err) {
@@ -1052,6 +1099,9 @@ function startRecording() {
 
 function stopRecording() {
   if (state.recording && state.recognition) {
+    state.manualStopRequested = true;
+    state.shouldAutoRestartRecognition = false;
+    clearRecognitionRestartTimer();
     setStatus('Stopping...');
     state.recognition.stop();
   }
@@ -1063,6 +1113,32 @@ function updateRecordState() {
   if (!state.supportsRecognition) {
     els.status.textContent = 'Speech recognition not available in this browser.';
   }
+}
+
+function clearRecognitionRestartTimer() {
+  if (recognitionRestartTimer) {
+    clearTimeout(recognitionRestartTimer);
+    recognitionRestartTimer = null;
+  }
+}
+
+function restartRecognitionSession() {
+  if (!state.recognition || !state.shouldAutoRestartRecognition || state.manualStopRequested) {
+    return;
+  }
+
+  clearRecognitionRestartTimer();
+  recognitionRestartTimer = setTimeout(() => {
+    recognitionRestartTimer = null;
+    try {
+      state.recognition.start();
+      state.recording = true;
+      setStatus('Listening...');
+      updateRecordState();
+    } catch (err) {
+      console.warn('Failed to restart recognition', err);
+    }
+  }, 150);
 }
 
 function updateSpeechSynthesisState({ announce = false } = {}) {
@@ -1266,6 +1342,10 @@ function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
   if (!wordStatus.length) return;
   const allCorrect = wordStatus.every((s) => s === 'correct');
   if (allCorrect && state.recognition) {
+    state.sentenceComplete = true;
+    state.shouldAutoRestartRecognition = false;
+    state.manualStopRequested = false;
+    clearRecognitionRestartTimer();
     try {
       state.recognition.stop();
     } catch (e) {

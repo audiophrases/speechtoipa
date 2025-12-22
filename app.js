@@ -32,9 +32,11 @@ const MASTER_ROWS_BY_LANG = {};
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 
 const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition;
+  typeof window !== 'undefined'
+    ? window.SpeechRecognition || window.webkitSpeechRecognition
+    : null;
 
-if (window.speechSynthesis) {
+if (typeof window !== 'undefined' && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
     window.speechSynthesis.getVoices();
     warnIfArabicVoiceMissing();
@@ -148,17 +150,19 @@ async function ensureMasterRowsForLang(lang) {
   return rows;
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  cacheElements();
-  createTooltips();
-  hydrateSelections();
-  attachEventListeners();
-  hydrateFromStorage();
-  await loadLessonManifest();
-  updateLessonId();
-  loadLesson();
-  warnIfArabicVoiceMissing();
-});
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', async () => {
+    cacheElements();
+    createTooltips();
+    hydrateSelections();
+    attachEventListeners();
+    hydrateFromStorage();
+    await loadLessonManifest();
+    updateLessonId();
+    loadLesson();
+    warnIfArabicVoiceMissing();
+  });
+}
 
 function cacheElements() {
   els.targetSelect = document.getElementById('target-lang');
@@ -1079,9 +1083,16 @@ function buildMaxConsecutiveRuns(tokens) {
 
 function filterUnexpectedRepeats(transcript, targetTokensForSentence) {
   const spokenTokens = tokenizeText(transcript);
-  const allowedRuns = buildMaxConsecutiveRuns(targetTokensForSentence || []);
+  const targetTokensNormalized = targetTokensForSentence || [];
+  const allowedRuns = buildMaxConsecutiveRuns(targetTokensNormalized);
+  const allowedCounts = new Map();
+
+  targetTokensNormalized.forEach((token) => {
+    allowedCounts.set(token, (allowedCounts.get(token) || 0) + 1);
+  });
 
   const filteredTokens = [];
+  const seenCounts = new Map();
   let prev = null;
   let runLength = 0;
 
@@ -1093,10 +1104,19 @@ function filterUnexpectedRepeats(transcript, targetTokensForSentence) {
       runLength = 1;
     }
 
-    const allowed = allowedRuns.get(token) || 1;
-    if (runLength <= allowed) {
-      filteredTokens.push(token);
+    const allowedRun = allowedRuns.get(token) || 1;
+    if (runLength > allowedRun) {
+      return;
     }
+
+    const allowedTotal = allowedCounts.has(token) ? allowedCounts.get(token) : 1;
+    const seen = seenCounts.get(token) || 0;
+    if (seen >= allowedTotal) {
+      return;
+    }
+
+    seenCounts.set(token, seen + 1);
+    filteredTokens.push(token);
   });
 
   return {
@@ -1297,4 +1317,12 @@ function finalizeScore(transcript) {
 
 function setStatus(text) {
   els.status.textContent = text;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    tokenizeText,
+    buildMaxConsecutiveRuns,
+    filterUnexpectedRepeats,
+  };
 }

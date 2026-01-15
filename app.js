@@ -32,6 +32,13 @@ const MASTER_CSV_URLS = {
 
 const MASTER_ROWS_BY_LANG = {};
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
+const DARJA_TRANSCRIPTION_HEADER = 'ma_latn';
+const DARJA_TRANSCRIPTION_FALLBACK_HEADERS = [
+  'ma_transcription',
+  'ma_translit',
+  'ma_latin',
+  'transcription',
+];
 
 const NO_TTS_SUPPORT_MESSAGE =
   'No local text-to-speech voice found. Using fallback TTS service for playback.';
@@ -333,6 +340,15 @@ function parseCsvToObjects(text) {
       });
       return obj;
     });
+}
+
+function getDarijaTranscription(row) {
+  if (!row) return '';
+  if (row[DARJA_TRANSCRIPTION_HEADER]) return row[DARJA_TRANSCRIPTION_HEADER];
+  for (const header of DARJA_TRANSCRIPTION_FALLBACK_HEADERS) {
+    if (row[header]) return row[header];
+  }
+  return '';
 }
 
 async function ensureMasterRowsForLang(lang) {
@@ -882,6 +898,11 @@ async function loadLesson() {
       if (val) sentenceTranslations[code] = val;
     });
 
+    const sentenceTranscription = getDarijaTranscription(sentenceRow);
+    const sentenceTranscriptions = sentenceTranscription
+      ? { [DARJA_TRANSCRIPTION_HEADER]: sentenceTranscription }
+      : {};
+
     // 3) Tokens (if any token rows exist)
     const tokens = tokenRows
       .slice()
@@ -893,9 +914,11 @@ async function loadLesson() {
           if (val) tokenTranslations[code] = val;
         });
         const surface = r[l2Col] || '';
+        const tokenTranscription = getDarijaTranscription(r);
         return {
           surface,
           translations: tokenTranslations,
+          transcription: tokenTranscription,
         };
       });
 
@@ -907,6 +930,7 @@ async function loadLesson() {
       sentenceNumber: index + 1,
       text,
       translations: sentenceTranslations,
+      transcriptions: sentenceTranscriptions,
       tokens,
     };
   });
@@ -980,13 +1004,25 @@ function hideTooltips() {
 
 function showWordTooltip(span, x, y) {
   const wordTrans = span.dataset.wordTranslation || span.dataset.sentenceTranslation;
-  if (!wordTrans) {
+  const wordTranscription = span.dataset.wordTranscription || span.dataset.sentenceTranscription;
+  const tooltipContent = buildTooltipContent(wordTrans, wordTranscription);
+  if (!tooltipContent) {
     wordTooltipEl.style.visibility = 'hidden';
     return;
   }
-  wordTooltipEl.textContent = wordTrans;
+  wordTooltipEl.textContent = tooltipContent;
   wordTooltipEl.style.visibility = 'visible';
   positionTooltips(x, y);
+}
+
+function buildTooltipContent(translation, transcription) {
+  if (state.targetLang === 'ma' && transcription) {
+    if (translation && translation !== transcription) {
+      return `${translation}\n${transcription}`;
+    }
+    return translation || transcription;
+  }
+  return translation || '';
 }
 
 function scheduleSentenceTooltip(span, x, y) {
@@ -999,6 +1035,7 @@ function scheduleSentenceTooltip(span, x, y) {
 
   const sentenceTrans = span.dataset.sentenceTranslation;
   const wordTrans = span.dataset.wordTranslation;
+  const sentenceTranscription = span.dataset.sentenceTranscription;
 
   if (!sentenceTrans || !wordTrans || sentenceTrans === wordTrans) {
     return;
@@ -1007,7 +1044,7 @@ function scheduleSentenceTooltip(span, x, y) {
   sentenceTooltipTimer = setTimeout(() => {
     if (currentTooltipTarget !== span) return;
 
-    sentenceTooltipEl.textContent = sentenceTrans;
+    sentenceTooltipEl.textContent = buildTooltipContent(sentenceTrans, sentenceTranscription);
     sentenceTooltipEl.style.visibility = 'visible';
     positionTooltips(x, y);
   }, 800);
@@ -1053,6 +1090,7 @@ function renderCurrentSentence() {
     const tokensForMatching = sentence.tokens.map((tokenObj) => ({
       surface: tokenObj.surface || '',
       translations: tokenObj.translations || {},
+      transcription: tokenObj.transcription || '',
     }));
     targetTokens = tokenizeText(fullText);
 
@@ -1077,12 +1115,20 @@ function renderCurrentSentence() {
 
       const wordTrans = tokenObj.translations?.[state.baseLang] || null;
       const sentenceTrans = sentence.translations?.[state.baseLang] || null;
+      const wordTranscription = tokenObj.transcription || null;
+      const sentenceTranscription = sentence.transcriptions?.[DARJA_TRANSCRIPTION_HEADER] || null;
 
       if (wordTrans) {
         span.dataset.wordTranslation = wordTrans;
       }
       if (sentenceTrans) {
         span.dataset.sentenceTranslation = sentenceTrans;
+      }
+      if (isRTL && wordTranscription) {
+        span.dataset.wordTranscription = wordTranscription;
+      }
+      if (isRTL && sentenceTranscription) {
+        span.dataset.sentenceTranscription = sentenceTranscription;
       }
 
       if (wordTrans) {
@@ -1117,9 +1163,14 @@ function renderCurrentSentence() {
       span.dataset.word = word;
 
       const sentenceTrans = sentence.translations?.[state.baseLang] || null;
+      const sentenceTranscription = sentence.transcriptions?.[DARJA_TRANSCRIPTION_HEADER] || null;
       if (sentenceTrans) {
         span.dataset.sentenceTranslation = sentenceTrans;
         span.setAttribute('aria-label', sentenceTrans);
+      }
+      if (isRTL && sentenceTranscription) {
+        span.dataset.wordTranscription = sentenceTranscription;
+        span.dataset.sentenceTranscription = sentenceTranscription;
       }
 
       wordSpans.push(span);

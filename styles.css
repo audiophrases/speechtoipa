@@ -248,6 +248,7 @@ textarea {
   border-radius: 0.4rem;
   font-size: 0.8rem;
   max-width: 260px;
+  white-space: pre-line;
   z-index: 9999;
 }
 

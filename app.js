@@ -665,6 +665,34 @@ function attachEventListeners() {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && els.customModal && !els.customModal.classList.contains('hidden')) {
       closeCustomModal(true);
+      return;
+    }
+
+    if (shouldIgnoreHotkey(event)) return;
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      goToPrevious();
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      goToNext();
+      return;
+    }
+
+    if (event.key === ' ' || event.code === 'Space') {
+      event.preventDefault();
+      if (!state.recording) {
+        startRecording();
+      }
+      return;
+    }
+
+    if (event.key === 'p' || event.key === 'P') {
+      event.preventDefault();
+      speakCurrent(1);
     }
   });
 
@@ -1116,6 +1144,14 @@ function renderCurrentSentence() {
 
 function currentSentence() {
   return state.sentences[state.currentIndex];
+}
+
+function goToPrevious() {
+  if (!state.sentences.length) return;
+  const total = state.sentences.length;
+  state.currentIndex = (state.currentIndex - 1 + total) % total;
+  renderCurrentSentence();
+  saveProgress();
 }
 
 function goToNext() {
@@ -1902,7 +1938,7 @@ function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
   const allCorrect = wordStatus.every((s) => s === 'correct');
   if (allCorrect && state.recognition) {
     state.sentenceComplete = true;
-    state.pendingAutoAdvance = true;
+    state.pendingAutoAdvance = false;
     state.shouldAutoRestartRecognition = false;
     state.manualStopRequested = false;
     clearRecognitionRestartTimer();
@@ -1917,6 +1953,17 @@ function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
     }
     setStatus('Recording stopped – sentence complete ✅');
   }
+}
+
+function shouldIgnoreHotkey(event) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return true;
+  const target = event.target;
+  if (!target || !(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  if (els.customModal && !els.customModal.classList.contains('hidden')) return true;
+  return false;
 }
 
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {

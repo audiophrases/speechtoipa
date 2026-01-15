@@ -122,6 +122,7 @@ let currentTooltipTarget = null;
 let hasWarnedAboutArabicVoice = false;
 let lastLessonId = '';
 let recognitionRestartTimer = null;
+let nextSentenceTimer = null;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -138,6 +139,7 @@ const state = {
   supportsRecognition: Boolean(SpeechRecognition),
   manualStopRequested: false,
   sentenceComplete: false,
+  pendingAutoAdvance: false,
   shouldAutoRestartRecognition: false,
   ttsLoading: false,
 };
@@ -1492,6 +1494,9 @@ function initRecognition() {
     const shouldFinalize = state.manualStopRequested || state.sentenceComplete;
     if (shouldFinalize && lastTranscript !== null) {
       finalizeScore(lastTranscript);
+      if (state.sentenceComplete && state.pendingAutoAdvance) {
+        scheduleNextSentenceAdvance();
+      }
     } else if (state.shouldAutoRestartRecognition && !state.manualStopRequested) {
       restartRecognitionSession();
     }
@@ -1507,12 +1512,14 @@ function startRecording() {
   }
   if (!state.recognition) initRecognition();
   try {
+    clearNextSentenceTimer();
     lastTranscript = '';
     els.transcript.textContent = '';
     els.feedback.textContent = '';
     resetSentenceState();
     state.manualStopRequested = false;
     state.sentenceComplete = false;
+    state.pendingAutoAdvance = false;
     state.shouldAutoRestartRecognition = true;
     clearRecognitionRestartTimer();
     state.recognition.lang = getLangCode(state.targetLang);
@@ -1546,6 +1553,24 @@ function clearRecognitionRestartTimer() {
     clearTimeout(recognitionRestartTimer);
     recognitionRestartTimer = null;
   }
+}
+
+function clearNextSentenceTimer() {
+  if (nextSentenceTimer) {
+    clearTimeout(nextSentenceTimer);
+    nextSentenceTimer = null;
+  }
+}
+
+function scheduleNextSentenceAdvance() {
+  clearNextSentenceTimer();
+  nextSentenceTimer = setTimeout(() => {
+    nextSentenceTimer = null;
+    if (state.sentenceComplete && state.pendingAutoAdvance) {
+      state.pendingAutoAdvance = false;
+      goToNext();
+    }
+  }, 800);
 }
 
 function restartRecognitionSession() {
@@ -1872,10 +1897,12 @@ function updateWordSpanClasses() {
 
 function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
   if (!allowAutoStop) return;
+  if (state.sentenceComplete) return;
   if (!wordStatus.length) return;
   const allCorrect = wordStatus.every((s) => s === 'correct');
   if (allCorrect && state.recognition) {
     state.sentenceComplete = true;
+    state.pendingAutoAdvance = true;
     state.shouldAutoRestartRecognition = false;
     state.manualStopRequested = false;
     clearRecognitionRestartTimer();
@@ -1942,7 +1969,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     els.transcript.textContent = filteredTranscript;
   }
 
-  checkIfSentenceCompleteAndStop({ allowAutoStop: isFinalResult });
+  checkIfSentenceCompleteAndStop({ allowAutoStop: true });
 }
 
 function finalizeScore(transcript) {

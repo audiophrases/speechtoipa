@@ -1759,7 +1759,46 @@ const EQUIV_GROUPS = {
   amb: ['em', 'amb', 'en'],
 };
 
-function similarityScore(rawTarget, rawCandidate) {
+const APPROX_RULES_BY_LANG = {
+  default: {
+    coverageThreshold: 0.7,
+  },
+};
+
+function getApproxRules(langCode) {
+  if (langCode && APPROX_RULES_BY_LANG[langCode]) {
+    return APPROX_RULES_BY_LANG[langCode];
+  }
+  return APPROX_RULES_BY_LANG.default || {};
+}
+
+function orderedCharacterCoverage(target, candidate) {
+  if (!target) return 0;
+  if (!candidate) return 0;
+  let tIndex = 0;
+  let cIndex = 0;
+  let matched = 0;
+
+  while (tIndex < target.length && cIndex < candidate.length) {
+    if (target[tIndex] === candidate[cIndex]) {
+      matched += 1;
+      tIndex += 1;
+      cIndex += 1;
+    } else {
+      cIndex += 1;
+    }
+  }
+
+  return matched / target.length;
+}
+
+function passesApproximationRule(target, candidate, langCode) {
+  const { coverageThreshold } = getApproxRules(langCode);
+  if (!coverageThreshold) return false;
+  return orderedCharacterCoverage(target, candidate) >= coverageThreshold;
+}
+
+function similarityScore(rawTarget, rawCandidate, langCode) {
   const target = normalizeWord(rawTarget);
   const cand = normalizeWord(rawCandidate);
   if (!target || !cand) return 0;
@@ -1771,15 +1810,20 @@ function similarityScore(rawTarget, rawCandidate) {
     return 0.95;
   }
 
+  if (passesApproximationRule(target, cand, langCode)) {
+    return 1;
+  }
+
   const dist = levenshtein(target, cand);
   const maxLen = Math.max(target.length, cand.length);
   const normDist = maxLen === 0 ? 0 : dist / maxLen;
   return 1 - normDist;
 }
 
-function findMatchesForTargetTokens(targetTokens, spokenTokens) {
+function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {}) {
   const matches = new Array(targetTokens.length).fill(null);
   const usedUntil = { value: 0 };
+  const targetLang = langCode || state.targetLang;
 
   const S = spokenTokens.length;
   const MAX_WINDOW = 3;
@@ -1792,7 +1836,7 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens) {
       for (let end = start; end < Math.min(S, start + MAX_WINDOW); end++) {
         const windowTokens = spokenTokens.slice(start, end + 1);
         const concatenated = normalizeWord(windowTokens.join(''));
-        const score = similarityScore(target, concatenated);
+        const score = similarityScore(target, concatenated, targetLang);
         if (!best || score > best.score) {
           best = { start, end, score };
         }

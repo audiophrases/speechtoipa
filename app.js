@@ -1150,7 +1150,7 @@ function renderCurrentSentence() {
       translations: tokenObj.translations || {},
       transcription: tokenObj.transcription || '',
     }));
-    targetTokens = tokenizeText(fullText);
+    targetTokens = tokenizeText(fullText, state.targetLang);
 
     let pos = 0;
 
@@ -1212,7 +1212,7 @@ function renderCurrentSentence() {
     }
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
-    targetTokens = rawTokens.map((w) => normalizeToken(w));
+    targetTokens = rawTokens.map((w) => normalizeToken(w, state.targetLang));
 
     rawTokens.forEach((word) => {
       const span = document.createElement('span');
@@ -1824,38 +1824,214 @@ function normalizeWord(w) {
     .trim();
 }
 
-const NUMBER_TOKEN_MAP = new Map([
-  ['zero', '0'],
-  ['one', '1'],
-  ['two', '2'],
-  ['three', '3'],
-  ['four', '4'],
-  ['five', '5'],
-  ['six', '6'],
-  ['seven', '7'],
-  ['eight', '8'],
-  ['nine', '9'],
-  ['ten', '10'],
-]);
+const NUMBER_WORDS_BY_LANG = {
+  en: {
+    small: {
+      0: 'zero',
+      1: 'one',
+      2: 'two',
+      3: 'three',
+      4: 'four',
+      5: 'five',
+      6: 'six',
+      7: 'seven',
+      8: 'eight',
+      9: 'nine',
+      10: 'ten',
+      11: 'eleven',
+      12: 'twelve',
+      13: 'thirteen',
+      14: 'fourteen',
+      15: 'fifteen',
+      16: 'sixteen',
+      17: 'seventeen',
+      18: 'eighteen',
+      19: 'nineteen',
+      20: 'twenty',
+    },
+    tens: {
+      20: 'twenty',
+      30: 'thirty',
+      40: 'forty',
+      50: 'fifty',
+      60: 'sixty',
+      70: 'seventy',
+      80: 'eighty',
+      90: 'ninety',
+    },
+  },
+  fr: {
+    small: {
+      0: 'zéro',
+      1: 'un',
+      2: 'deux',
+      3: 'trois',
+      4: 'quatre',
+      5: 'cinq',
+      6: 'six',
+      7: 'sept',
+      8: 'huit',
+      9: 'neuf',
+      10: 'dix',
+      11: 'onze',
+      12: 'douze',
+      13: 'treize',
+      14: 'quatorze',
+      15: 'quinze',
+      16: 'seize',
+      17: 'dix-sept',
+      18: 'dix-huit',
+      19: 'dix-neuf',
+      20: 'vingt',
+    },
+    tens: {
+      20: 'vingt',
+      30: 'trente',
+      40: 'quarante',
+      50: 'cinquante',
+      60: 'soixante',
+      70: 'soixante-dix',
+      80: 'quatre-vingt',
+      90: 'quatre-vingt-dix',
+    },
+  },
+  ca: {
+    small: {
+      0: 'zero',
+      1: 'u',
+      2: 'dos',
+      3: 'tres',
+      4: 'quatre',
+      5: 'cinc',
+      6: 'sis',
+      7: 'set',
+      8: 'vuit',
+      9: 'nou',
+      10: 'deu',
+      11: 'onze',
+      12: 'dotze',
+      13: 'tretze',
+      14: 'catorze',
+      15: 'quinze',
+      16: 'setze',
+      17: 'disset',
+      18: 'divuit',
+      19: 'dinou',
+      20: 'vint',
+    },
+    tens: {
+      20: 'vint',
+      30: 'trenta',
+      40: 'quaranta',
+      50: 'cinquanta',
+      60: 'seixanta',
+      70: 'setanta',
+      80: 'vuitanta',
+      90: 'noranta',
+    },
+  },
+  it: {
+    small: {
+      0: 'zero',
+      1: 'uno',
+      2: 'due',
+      3: 'tre',
+      4: 'quattro',
+      5: 'cinque',
+      6: 'sei',
+      7: 'sette',
+      8: 'otto',
+      9: 'nove',
+      10: 'dieci',
+      11: 'undici',
+      12: 'dodici',
+      13: 'tredici',
+      14: 'quattordici',
+      15: 'quindici',
+      16: 'sedici',
+      17: 'diciassette',
+      18: 'diciotto',
+      19: 'diciannove',
+      20: 'venti',
+    },
+    tens: {
+      20: 'venti',
+      30: 'trenta',
+      40: 'quaranta',
+      50: 'cinquanta',
+      60: 'sessanta',
+      70: 'settanta',
+      80: 'ottanta',
+      90: 'novanta',
+    },
+  },
+  ma: {
+    small: {
+      0: 'sefr',
+      1: 'wahed',
+      2: 'jouj',
+      3: 'tlata',
+      4: 'rb3a',
+      5: 'khamsa',
+      6: 'stta',
+      7: 'sb3a',
+      8: 'tmnya',
+      9: 'ts3ud',
+      10: '3shra',
+      11: 'hda3sh',
+      12: 'tna3sh',
+      13: 'tlata3sh',
+      14: 'rb3ta3sh',
+      15: 'khamsa3sh',
+      16: 'stta3sh',
+      17: 'sb3a3sh',
+      18: 'tmnya3sh',
+      19: 'ts3ud3sh',
+      20: '3shrin',
+    },
+    tens: {
+      20: '3shrin',
+      30: 'tlata3shrin',
+      40: 'rb3in',
+      50: 'khamsin',
+      60: 'sttin',
+      70: 'sb3in',
+      80: 'tmanin',
+      90: 'ts3in',
+    },
+  },
+};
 
 const DIGIT_TOKEN_PATTERN = /^\d+$/;
 
-function normalizeToken(rawToken) {
-  const token = normalizeWord(rawToken);
-  if (!token) return '';
-  if (NUMBER_TOKEN_MAP.has(token)) {
-    return NUMBER_TOKEN_MAP.get(token);
+function digitToNumberWord(token, langCode) {
+  const normalizedLang = (langCode || state.targetLang || 'en').split('-')[0];
+  const num = Number.parseInt(token, 10);
+  if (!Number.isFinite(num)) return '';
+  const mapForLang = NUMBER_WORDS_BY_LANG[normalizedLang] || NUMBER_WORDS_BY_LANG.en;
+  if (mapForLang?.small && Object.prototype.hasOwnProperty.call(mapForLang.small, num)) {
+    return mapForLang.small[num];
   }
-  if (DIGIT_TOKEN_PATTERN.test(token)) {
-    return token;
+  if (mapForLang?.tens && Object.prototype.hasOwnProperty.call(mapForLang.tens, num)) {
+    return mapForLang.tens[num];
   }
   return token;
 }
 
-function tokenizeText(t) {
+function normalizeToken(rawToken, langCode) {
+  const token = normalizeWord(rawToken);
+  if (!token) return '';
+  if (DIGIT_TOKEN_PATTERN.test(token)) {
+    const numberWord = digitToNumberWord(token, langCode);
+    return normalizeWord(numberWord);
+  }
+  return token;
+}
+
+function tokenizeText(t, langCode) {
   return normalizeWord(t)
     .split(/\s+/)
-    .map((token) => normalizeToken(token))
+    .map((token) => normalizeToken(token, langCode))
     .filter(Boolean);
 }
 
@@ -1881,8 +2057,8 @@ function buildMaxConsecutiveRuns(tokens) {
   return maxRuns;
 }
 
-function filterUnexpectedRepeats(transcript, targetTokensForSentence) {
-  const spokenTokens = tokenizeText(transcript);
+function filterUnexpectedRepeats(transcript, targetTokensForSentence, langCode) {
+  const spokenTokens = tokenizeText(transcript, langCode);
   const targetTokensNormalized = targetTokensForSentence || [];
   const allowedRuns = buildMaxConsecutiveRuns(targetTokensNormalized);
   const allowedCounts = new Map();
@@ -1993,8 +2169,8 @@ function passesApproximationRule(target, candidate, langCode) {
 }
 
 function similarityScore(rawTarget, rawCandidate, langCode) {
-  const target = normalizeToken(rawTarget);
-  const cand = normalizeToken(rawCandidate);
+  const target = normalizeToken(rawTarget, langCode);
+  const cand = normalizeToken(rawCandidate, langCode);
   if (!target || !cand) return 0;
 
   if (target === cand) return 1;
@@ -2102,7 +2278,8 @@ function shouldIgnoreHotkey(event) {
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
     transcript,
-    targetTokens
+    targetTokens,
+    state.targetLang
   );
 
   lastTranscript = filteredTranscript;
@@ -2155,7 +2332,8 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
 function finalizeScore(transcript) {
   const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
     transcript,
-    targetTokens
+    targetTokens,
+    state.targetLang
   );
   lastTranscript = filteredTranscript;
 

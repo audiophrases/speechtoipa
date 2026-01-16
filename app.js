@@ -700,7 +700,9 @@ function attachEventListeners() {
 
     if (event.key === ' ' || event.code === 'Space') {
       event.preventDefault();
-      if (!state.recording) {
+      if (state.recording) {
+        stopRecording();
+      } else {
         startRecording();
       }
       return;

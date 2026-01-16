@@ -1955,7 +1955,7 @@ const EQUIV_GROUPS = {
 
 const APPROX_RULES_BY_LANG = {
   default: {
-    coverageThreshold: 0.7,
+    coverageThreshold: 0.65,
   },
 };
 

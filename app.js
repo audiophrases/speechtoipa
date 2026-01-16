@@ -2166,6 +2166,8 @@ function levenshtein(a, b) {
 const EQUIV_GROUPS = {
   em: ['em', 'amb', 'en'],
   amb: ['em', 'amb', 'en'],
+  u: ['u', 'un'],
+  un: ['u', 'un'],
 };
 
 const APPROX_RULES_BY_LANG = {

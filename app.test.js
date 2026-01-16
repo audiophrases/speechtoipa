@@ -66,3 +66,17 @@ test('tokenizes French digit sequences into number words', () => {
     'cinq',
   ]);
 });
+
+test('normalizes time tokens to match o\'clock phrase in English', () => {
+  const timeTokens = tokenizeText('1:00', 'en');
+  const wordTokens = tokenizeText("one o'clock", 'en');
+
+  assert.deepStrictEqual(timeTokens, wordTokens);
+});
+
+test('normalizes time tokens to match hour phrases in French', () => {
+  const timeTokens = tokenizeText('1:00', 'fr');
+  const wordTokens = tokenizeText('une heure', 'fr');
+
+  assert.deepStrictEqual(timeTokens, wordTokens);
+});

@@ -2003,6 +2003,44 @@ const NUMBER_WORDS_BY_LANG = {
 };
 
 const DIGIT_TOKEN_PATTERN = /^\d+$/;
+const TIME_TOKEN_PATTERN = /\b\d{1,2}:\d{2}\b/g;
+const TIME_TOKEN_EXACT_PATTERN = /^\d{1,2}:\d{2}$/;
+
+function getHourWord(hourToken, langCode) {
+  const normalizedLang = (langCode || state.targetLang || 'en').split('-')[0];
+  const hourNum = Number.parseInt(hourToken, 10);
+  if (!Number.isFinite(hourNum)) return '';
+  if (normalizedLang === 'fr' && hourNum === 1) return 'une';
+  return digitToNumberWord(hourToken, normalizedLang);
+}
+
+function timeTokenToWords(token, langCode) {
+  if (!TIME_TOKEN_EXACT_PATTERN.test(token)) return '';
+  const [hours, minutes] = token.split(':');
+  if (minutes !== '00') return '';
+  const normalizedLang = (langCode || state.targetLang || 'en').split('-')[0];
+  const hourWord = getHourWord(hours, normalizedLang);
+  if (!hourWord) return '';
+
+  switch (normalizedLang) {
+    case 'en':
+      return `${hourWord} o'clock`;
+    case 'fr': {
+      const hourNum = Number.parseInt(hours, 10);
+      const noun = hourNum === 1 ? 'heure' : 'heures';
+      return `${hourWord} ${noun}`;
+    }
+    default:
+      return '';
+  }
+}
+
+function normalizeTimeTokens(text, langCode) {
+  return (text || '').replace(TIME_TOKEN_PATTERN, (match) => {
+    const replacement = timeTokenToWords(match, langCode);
+    return replacement || match;
+  });
+}
 
 function digitToNumberWord(token, langCode) {
   const normalizedLang = (langCode || state.targetLang || 'en').split('-')[0];
@@ -2029,7 +2067,8 @@ function normalizeToken(rawToken, langCode) {
 }
 
 function tokenizeText(t, langCode) {
-  return normalizeWord(t)
+  const timeNormalized = normalizeTimeTokens(t, langCode);
+  return normalizeWord(timeNormalized)
     .split(/\s+/)
     .map((token) => normalizeToken(token, langCode))
     .filter(Boolean);

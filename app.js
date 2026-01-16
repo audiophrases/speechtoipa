@@ -714,6 +714,7 @@ function attachEventListeners() {
 
   els.voiceSelect?.addEventListener('change', () => {
     voiceSelections[state.targetLang] = els.voiceSelect.value;
+    playbackQueue.resetWarmup(getLangCode(state.targetLang));
     persistVoices();
     updateVoiceNote();
     updatePlaybackWarnings();
@@ -1393,6 +1394,14 @@ function createPlaybackQueue() {
     return promise;
   }
 
+  function resetWarmup(langCode) {
+    if (!langCode) {
+      warmups.clear();
+      return;
+    }
+    warmups.delete(langCode);
+  }
+
   async function waitForSynthAvailability() {
     const synth = window.speechSynthesis;
     if (!synth) return;
@@ -1493,6 +1502,7 @@ function createPlaybackQueue() {
       processQueue();
     },
     warmVoicesForLang,
+    resetWarmup,
     isWarming() {
       return isWarming;
     },

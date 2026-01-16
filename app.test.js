@@ -32,3 +32,14 @@ test('removes extra occurrences even when they are not consecutive', () => {
 
   assert.deepStrictEqual(filteredTokens, tokenizeText('to be or not to be'));
 });
+
+test('normalizes digit tokens to match spelled-out numbers', () => {
+  const spelled = tokenizeText('I have two apples');
+  const digits = tokenizeText('I have 2 apples');
+
+  assert.deepStrictEqual(digits, spelled);
+});
+
+test('tokenizes digit sequences as number tokens', () => {
+  assert.deepStrictEqual(tokenizeText('1 2 3 4 5'), ['1', '2', '3', '4', '5']);
+});

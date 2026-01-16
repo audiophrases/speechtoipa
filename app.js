@@ -1212,7 +1212,7 @@ function renderCurrentSentence() {
     }
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
-    targetTokens = rawTokens.map((w) => normalizeWord(w));
+    targetTokens = rawTokens.map((w) => normalizeToken(w));
 
     rawTokens.forEach((word) => {
       const span = document.createElement('span');
@@ -1824,9 +1824,38 @@ function normalizeWord(w) {
     .trim();
 }
 
+const NUMBER_TOKEN_MAP = new Map([
+  ['zero', '0'],
+  ['one', '1'],
+  ['two', '2'],
+  ['three', '3'],
+  ['four', '4'],
+  ['five', '5'],
+  ['six', '6'],
+  ['seven', '7'],
+  ['eight', '8'],
+  ['nine', '9'],
+  ['ten', '10'],
+]);
+
+const DIGIT_TOKEN_PATTERN = /^\d+$/;
+
+function normalizeToken(rawToken) {
+  const token = normalizeWord(rawToken);
+  if (!token) return '';
+  if (NUMBER_TOKEN_MAP.has(token)) {
+    return NUMBER_TOKEN_MAP.get(token);
+  }
+  if (DIGIT_TOKEN_PATTERN.test(token)) {
+    return token;
+  }
+  return token;
+}
+
 function tokenizeText(t) {
   return normalizeWord(t)
     .split(/\s+/)
+    .map((token) => normalizeToken(token))
     .filter(Boolean);
 }
 
@@ -1964,8 +1993,8 @@ function passesApproximationRule(target, candidate, langCode) {
 }
 
 function similarityScore(rawTarget, rawCandidate, langCode) {
-  const target = normalizeWord(rawTarget);
-  const cand = normalizeWord(rawCandidate);
+  const target = normalizeToken(rawTarget);
+  const cand = normalizeToken(rawCandidate);
   if (!target || !cand) return 0;
 
   if (target === cand) return 1;

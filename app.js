@@ -154,6 +154,56 @@ const state = {
 const els = {};
 let normalizedVoices = [];
 let voiceSelections = {};
+const readyVoiceKeys = new Set();
+
+function getVoiceKey(voice) {
+  if (!voice) return '';
+  return `${voice.lang}|${voice.name}`;
+}
+
+function markVoicesReady(voices) {
+  if (!Array.isArray(voices) || !voices.length) return;
+  voices.forEach((voice) => {
+    const key = getVoiceKey(voice);
+    if (key) readyVoiceKeys.add(key);
+  });
+}
+
+function rankVoicesForLang(voices, langCode) {
+  if (!Array.isArray(voices)) return [];
+  const normalizedLang = (langCode || '').toLowerCase();
+  const baseLang = normalizedLang.split('-')[0];
+  const curatedList = CURATED_VOICE_PRIORITIES[baseLang] || [];
+
+  return voices.slice().sort((a, b) => {
+    const aLang = (a.lang || '').toLowerCase();
+    const bLang = (b.lang || '').toLowerCase();
+    const aExact = Boolean(normalizedLang) && aLang === normalizedLang;
+    const bExact = Boolean(normalizedLang) && bLang === normalizedLang;
+    if (aExact !== bExact) return aExact ? -1 : 1;
+
+    const aPrefix = Boolean(baseLang) && aLang.startsWith(baseLang);
+    const bPrefix = Boolean(baseLang) && bLang.startsWith(baseLang);
+    if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
+
+    const aLocal = Boolean(a.localService);
+    const bLocal = Boolean(b.localService);
+    if (aLocal !== bLocal) return aLocal ? -1 : 1;
+
+    const aReady = readyVoiceKeys.has(getVoiceKey(a));
+    const bReady = readyVoiceKeys.has(getVoiceKey(b));
+    if (aReady !== bReady) return aReady ? -1 : 1;
+
+    const aCuratedIndex = curatedList.findIndex((lang) => aLang.startsWith(lang.toLowerCase()));
+    const bCuratedIndex = curatedList.findIndex((lang) => bLang.startsWith(lang.toLowerCase()));
+    const aCuratedScore = aCuratedIndex === -1 ? Number.MAX_SAFE_INTEGER : aCuratedIndex;
+    const bCuratedScore = bCuratedIndex === -1 ? Number.MAX_SAFE_INTEGER : bCuratedIndex;
+    if (aCuratedScore !== bCuratedScore) return aCuratedScore - bCuratedScore;
+
+    if (aLang !== bLang) return aLang.localeCompare(bLang);
+    return (a.name || '').localeCompare(b.name || '');
+  });
+}
 
 function setTtsLoading(isLoading) {
   state.ttsLoading = isLoading;
@@ -460,28 +510,32 @@ function persistVoices() {
   }
 }
 
-function normalizeVoiceList(voices) {
-  if (!Array.isArray(voices)) return [];
-  return voices
-    .map((v) => ({
-      name: v.name,
-      lang: v.lang,
-      deviceSupport: Boolean(v.localService),
-    }))
-    .sort((a, b) => {
-      if (a.lang === b.lang) return a.name.localeCompare(b.name);
-      return a.lang.localeCompare(b.lang);
-    });
+function normalizeVoiceList(voices, langCode) {
+  const rankedVoices = rankVoicesForLang(voices, langCode);
+  return rankedVoices.map((v) => ({
+    name: v.name,
+    lang: v.lang,
+    deviceSupport: Boolean(v.localService),
+    ready: readyVoiceKeys.has(getVoiceKey(v)),
+  }));
 }
 
 function populateVoiceSelect() {
   if (!els.voiceSelect) return;
 
+  if (window.speechSynthesis) {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length) {
+      markVoicesReady(voices);
+      normalizedVoices = normalizeVoiceList(voices, getLangCode(state.targetLang));
+    }
+  }
+
   const options = [{ value: AUTO_VOICE_VALUE, label: 'Auto (recommended)' }];
   normalizedVoices.forEach((v) => {
     options.push({
       value: `${v.lang}|${v.name}`,
-      label: `${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''})`,
+      label: `${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''}${v.ready ? ', ready' : ''})`,
     });
   });
 
@@ -970,7 +1024,8 @@ function buildVoiceMap() {
   }
 
   const voices = window.speechSynthesis.getVoices();
-  normalizedVoices = normalizeVoiceList(voices);
+  markVoicesReady(voices);
+  normalizedVoices = normalizeVoiceList(voices, getLangCode(state.targetLang));
   populateVoiceSelect();
   updatePlaybackWarnings();
 }
@@ -1314,6 +1369,7 @@ function getVoiceForLang(langCode) {
   if (!window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices();
   if (!voices || !voices.length) return null;
+  markVoicesReady(voices);
 
   const storedSelection = voiceSelections[state.targetLang];
   if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
@@ -1322,23 +1378,8 @@ function getVoiceForLang(langCode) {
     if (voice) return voice;
   }
 
-  const base = langCode.split('-')[0];
-  const voiceByLangMatch = voices.find((v) => v.lang === langCode);
-  if (voiceByLangMatch) return voiceByLangMatch;
-
-  const prefixMatch = voices.find((v) => v.lang.toLowerCase().startsWith(base.toLowerCase()));
-  if (prefixMatch) return prefixMatch;
-
-  const curatedList = CURATED_VOICE_PRIORITIES[base] || [];
-  for (const candidate of curatedList) {
-    const byFull = voices.find((v) => v.lang === candidate);
-    if (byFull) return byFull;
-    const byPrefix = voices.find((v) => v.lang.toLowerCase().startsWith(candidate.toLowerCase()));
-    if (byPrefix) return byPrefix;
-  }
-
-  const fallbackLang = voices.find((v) => v.lang === voices[0]?.lang);
-  return fallbackLang || null;
+  const ranked = rankVoicesForLang(voices, langCode);
+  return ranked[0] || null;
 }
 
 const playbackQueue = createPlaybackQueue();

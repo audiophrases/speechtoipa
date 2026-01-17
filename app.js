@@ -2337,15 +2337,17 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
   }
 
-  let firstNotCorrect = -1;
-  for (let i = 0; i < n; i++) {
-    if (wordStatus[i] !== 'correct') {
-      firstNotCorrect = i;
-      break;
+  if (isFinalResult) {
+    let firstNotCorrect = -1;
+    for (let i = 0; i < n; i++) {
+      if (wordStatus[i] !== 'correct') {
+        firstNotCorrect = i;
+        break;
+      }
     }
-  }
-  if (firstNotCorrect !== -1) {
-    wordStatus[firstNotCorrect] = 'wrong';
+    if (firstNotCorrect !== -1) {
+      wordStatus[firstNotCorrect] = 'wrong';
+    }
   }
 
   for (let i = 0; i < n; i++) {

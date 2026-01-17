@@ -2325,21 +2325,34 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
 
   lastTranscript = filteredTranscript;
 
-  const matches = findMatchesForTargetTokens(targetTokens, filteredTokens);
   const prevStatus = [...wordStatus];
   const n = targetTokens.length;
+  let lockedPrefix = 0;
+
+  while (lockedPrefix < prevStatus.length && prevStatus[lockedPrefix] === 'correct') {
+    lockedPrefix += 1;
+  }
 
   wordStatus = targetTokens.map(() => 'pending');
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < lockedPrefix; i++) {
+    wordStatus[i] = 'correct';
+  }
+
+  const matches = findMatchesForTargetTokens(
+    targetTokens.slice(lockedPrefix),
+    filteredTokens.slice(lockedPrefix)
+  );
+
+  for (let i = 0; i < matches.length; i++) {
     if (matches[i]) {
-      wordStatus[i] = 'correct';
+      wordStatus[i + lockedPrefix] = 'correct';
     }
   }
 
   if (isFinalResult) {
     let firstNotCorrect = -1;
-    for (let i = 0; i < n; i++) {
+    for (let i = lockedPrefix; i < n; i++) {
       if (wordStatus[i] !== 'correct') {
         firstNotCorrect = i;
         break;
@@ -2354,7 +2367,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     const wasWrong = prevStatus[i] === 'wrong';
     const isNowCorrect = wordStatus[i] === 'correct';
     if (wasWrong && isNowCorrect) {
-      for (let k = i + 1; k < n; k++) {
+      for (let k = Math.max(i + 1, lockedPrefix); k < n; k++) {
         if (wordStatus[k] === 'correct') {
           wordStatus[k] = 'pending';
         }

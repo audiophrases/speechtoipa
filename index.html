@@ -32,6 +32,14 @@
       <label for="lesson-select">Lesson:</label>
       <select id="lesson-select"></select>
     </div>
+    <div class="field">
+      <label for="approx-slider">Approximation tolerance:</label>
+      <input id="approx-slider" type="range" min="0" max="5" step="1" value="2" />
+      <div class="range-meta">
+        <p id="approx-label" class="small">Approximation tolerance: B1 (70%)</p>
+        <p class="small">Lower = more lenient, higher = stricter.</p>
+      </div>
+    </div>
   </section>
 
   <main id="app" class="card" aria-live="polite">

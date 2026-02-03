@@ -94,6 +94,12 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+.range-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 button {
   cursor: pointer;
   transition: transform 0.1s ease, box-shadow 0.1s ease;

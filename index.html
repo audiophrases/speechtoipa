@@ -22,6 +22,7 @@
     <div class="field">
       <label class="field-title" for="voice-select">Voice for target language:</label>
       <select id="voice-select"></select>
+      <p id="voice-note" class="small"></p>
     </div>
     <div class="field">
       <label class="field-title" for="base-lang">Base language (L1):</label>
@@ -32,7 +33,10 @@
       <select id="lesson-select"></select>
     </div>
     <div class="field">
-      <label id="approx-label" class="field-title" for="approx-slider">Accuracy 50%</label>
+      <label for="approx-slider" class="sr-only">Accuracy</label>
+      <div class="range-meta">
+        <p id="approx-label" class="field-title">Accuracy 50%</p>
+      </div>
       <input id="approx-slider" type="range" min="0" max="5" step="1" value="0" />
     </div>
   </section>

@@ -45,8 +45,6 @@ const DARJA_TRANSCRIPTION_FALLBACK_HEADERS = [
 
 const NO_TTS_SUPPORT_MESSAGE =
   'No local text-to-speech voice found. Using fallback TTS service for playback.';
-const SILENT_AUDIO_DATA_URL =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
 
 const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
 const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
@@ -114,31 +112,6 @@ function isSpeechSynthesisSupported() {
   return Boolean(window.speechSynthesis) && 'SpeechSynthesisUtterance' in window;
 }
 
-function unlockAudioPlayback() {
-  if (!isMobileDevice() || audioUnlockState.ready || audioUnlockState.pending) return;
-  audioUnlockState.pending = true;
-  const audio = new Audio(SILENT_AUDIO_DATA_URL);
-  audio.preload = 'auto';
-  audio.volume = 0;
-
-  const handleSuccess = () => {
-    audioUnlockState.ready = true;
-    audioUnlockState.pending = false;
-  };
-
-  const handleFailure = (err) => {
-    console.warn('Unable to unlock audio playback', err);
-    audioUnlockState.pending = false;
-  };
-
-  const playPromise = audio.play();
-  if (playPromise && typeof playPromise.then === 'function') {
-    playPromise.then(handleSuccess).catch(handleFailure);
-  } else {
-    handleSuccess();
-  }
-}
-
 if (typeof window !== 'undefined' && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
     window.speechSynthesis.getVoices();
@@ -186,7 +159,6 @@ const els = {};
 let normalizedVoices = [];
 let voiceSelections = {};
 const readyVoiceKeys = new Set();
-const audioUnlockState = { ready: false, pending: false };
 
 function getVoiceKey(voice) {
   if (!voice) return '';
@@ -790,21 +762,14 @@ function attachEventListeners() {
     setApproxLevel(nextIndex);
   });
 
-  els.play.addEventListener('click', () => {
-    unlockAudioPlayback();
-    speakCurrent(1);
-  });
-  els.slow.addEventListener('click', () => {
-    unlockAudioPlayback();
-    speakCurrent(0.7);
-  });
+  els.play.addEventListener('click', () => speakCurrent(1));
+  els.slow.addEventListener('click', () => speakCurrent(0.7));
   els.next.addEventListener('click', () => goToNext());
   els.record.addEventListener('click', startRecording);
   els.stop.addEventListener('click', stopRecording);
 
   els.sentence.addEventListener('click', (e) => {
     if (e.target.classList.contains('word')) {
-      unlockAudioPlayback();
       speakWord(e.target.dataset.word);
       e.target.classList.toggle('active');
     }
@@ -1600,12 +1565,6 @@ function createPlaybackQueue() {
   async function speakWithService(item) {
     const baseUrl = getTtsBaseUrl();
     const ttsUrl = buildTtsRequestUrl(baseUrl, item.text, item.langCode);
-    if (isMobileDevice()) {
-      const playedViaUrl = await playTtsUrl(ttsUrl, item.rate);
-      if (playedViaUrl) {
-        return true;
-      }
-    }
     try {
       const blob = await fetchTtsAudio(item.text, item.langCode);
       await playTtsBlob(blob, item.rate);

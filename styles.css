@@ -45,6 +45,7 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
+  align-items: start;
 }
 
 .field {
@@ -52,12 +53,17 @@ h1 {
   border: 1px solid var(--border);
   padding: 0.75rem;
   border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
+.field-title,
 label {
   display: block;
   font-weight: 600;
-  margin-bottom: 0.35rem;
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .sr-only {
@@ -92,7 +98,6 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  margin-top: 0.4rem;
 }
 
 button {

@@ -624,7 +624,7 @@ function updateVoiceNote() {
     els.voiceNote.textContent = 'Auto picks the best match for each language.';
   } else {
     const [, name] = selection.split('|');
-    els.voiceNote.textContent = `Using voice: ${name}`;
+    els.voiceNote.textContent = name;
   }
 }
 

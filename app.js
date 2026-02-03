@@ -21,6 +21,16 @@ let availableLessons = [];
 const CUSTOM_LESSON_ID = 'custom';
 const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
+const DEFAULT_APPROX_THRESHOLD = 0.65;
+const CEFR_LEVELS = [
+  { label: 'A1', value: 50 },
+  { label: 'A2', value: 60 },
+  { label: 'B1', value: 70 },
+  { label: 'B2', value: 80 },
+  { label: 'C1', value: 90 },
+  { label: 'C2', value: 100 },
+];
+const DEFAULT_CEFR_INDEX = 2;
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
@@ -149,6 +159,7 @@ const state = {
   pendingAutoAdvance: false,
   shouldAutoRestartRecognition: false,
   ttsLoading: false,
+  approxLevelIndex: DEFAULT_CEFR_INDEX,
 };
 
 const els = {};
@@ -442,6 +453,8 @@ function cacheElements() {
   els.voiceNote = document.getElementById('voice-note');
   els.baseSelect = document.getElementById('base-lang');
   els.lessonSelect = document.getElementById('lesson-select');
+  els.approxSlider = document.getElementById('approx-slider');
+  els.approxLabel = document.getElementById('approx-label');
   els.sentence = document.getElementById('sentence');
   els.play = document.getElementById('play-btn');
   els.slow = document.getElementById('slow-btn');
@@ -491,6 +504,64 @@ function populateSelect(select, options, selected) {
     if (opt.code === selected) option.selected = true;
     select.appendChild(option);
   });
+}
+
+function clampCefrIndex(index) {
+  const max = CEFR_LEVELS.length - 1;
+  if (!Number.isFinite(index)) return DEFAULT_CEFR_INDEX;
+  return Math.min(max, Math.max(0, Math.round(index)));
+}
+
+function getCefrLevel(index) {
+  return CEFR_LEVELS[clampCefrIndex(index)] || CEFR_LEVELS[DEFAULT_CEFR_INDEX];
+}
+
+function getApproxThresholdFromIndex(index) {
+  const level = getCefrLevel(index);
+  return level.value / 100;
+}
+
+function updateApproxLabel() {
+  if (!els.approxLabel) return;
+  const level = getCefrLevel(state.approxLevelIndex);
+  els.approxLabel.textContent = `Approximation tolerance: ${level.label} (${level.value}%)`;
+}
+
+function readStoredProgressData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  let data = { progress: {} };
+  try {
+    data = raw ? JSON.parse(raw) : { progress: {} };
+  } catch {
+    data = { progress: {} };
+  }
+  if (!data.progress) data.progress = {};
+  return data;
+}
+
+function writeStoredProgressData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function persistApproxSettings() {
+  try {
+    const data = readStoredProgressData();
+    data.approxLevelIndex = state.approxLevelIndex;
+    writeStoredProgressData(data);
+  } catch (err) {
+    console.warn('Failed to save approximation settings', err);
+  }
+}
+
+function setApproxLevel(index, { persist = true } = {}) {
+  state.approxLevelIndex = clampCefrIndex(index);
+  if (els.approxSlider) {
+    els.approxSlider.value = String(state.approxLevelIndex);
+  }
+  updateApproxLabel();
+  if (persist) {
+    persistApproxSettings();
+  }
 }
 
 function getStoredVoices() {
@@ -692,6 +763,11 @@ function attachEventListeners() {
     handleLessonSelection(els.lessonSelect.value);
   });
 
+  els.approxSlider?.addEventListener('input', (event) => {
+    const nextIndex = Number(event.target.value);
+    setApproxLevel(nextIndex);
+  });
+
   els.play.addEventListener('click', () => speakCurrent(1));
   els.slow.addEventListener('click', () => speakCurrent(0.7));
   els.next.addEventListener('click', () => goToNext());
@@ -822,9 +898,16 @@ function closeCustomModal(resetSelection = false) {
 
 function hydrateFromStorage() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return;
+  let saved = null;
   try {
-    const saved = normalizeLegacyCodes(JSON.parse(raw));
+    if (raw) {
+      saved = normalizeLegacyCodes(JSON.parse(raw));
+    }
+  } catch (err) {
+    console.error('Failed to parse saved progress', err);
+  }
+
+  if (saved) {
     if (saved.targetLang) state.targetLang = saved.targetLang;
     if (saved.baseLang) state.baseLang = saved.baseLang;
     if (saved.lessonId && saved.lessonId !== CUSTOM_LESSON_ID) {
@@ -836,9 +919,14 @@ function hydrateFromStorage() {
     populateSelect(els.targetSelect, TARGET_LANGS, state.targetLang);
     populateSelect(els.baseSelect, BASE_LANGS, state.baseLang);
     populateLessonSelect();
-  } catch (err) {
-    console.error('Failed to parse saved progress', err);
   }
+
+  if (saved && Number.isFinite(saved.approxLevelIndex)) {
+    state.approxLevelIndex = clampCefrIndex(saved.approxLevelIndex);
+  } else {
+    state.approxLevelIndex = DEFAULT_CEFR_INDEX;
+  }
+  setApproxLevel(state.approxLevelIndex, { persist: false });
 
   voiceSelections = getStoredVoices();
   populateVoiceSelect();
@@ -864,16 +952,11 @@ function normalizeLegacyCodes(saved) {
 
 function saveProgress(bestScore) {
   if (state.mode === 'custom') return;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  let data = { progress: {} };
-  try {
-    data = raw ? JSON.parse(raw) : { progress: {} };
-  } catch {
-    data = { progress: {} };
-  }
+  const data = readStoredProgressData();
   data.targetLang = state.targetLang;
   data.baseLang = state.baseLang;
   data.lessonId = state.lessonId;
+  data.approxLevelIndex = state.approxLevelIndex;
   data.progress = data.progress || {};
   data.progress[state.lessonId] = data.progress[state.lessonId] || { currentIndex: 0, scores: {} };
   data.progress[state.lessonId].currentIndex = state.currentIndex;
@@ -882,7 +965,7 @@ function saveProgress(bestScore) {
     if (!data.progress[state.lessonId].scores) data.progress[state.lessonId].scores = {};
     data.progress[state.lessonId].scores[currentSentence().id] = Math.max(previous, bestScore);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  writeStoredProgressData(data);
 }
 
 function updateLessonId() {
@@ -2172,15 +2255,17 @@ const EQUIV_GROUPS = {
 
 const APPROX_RULES_BY_LANG = {
   default: {
-    coverageThreshold: 0.65,
+    coverageThreshold: DEFAULT_APPROX_THRESHOLD,
   },
 };
 
 function getApproxRules(langCode) {
-  if (langCode && APPROX_RULES_BY_LANG[langCode]) {
-    return APPROX_RULES_BY_LANG[langCode];
-  }
-  return APPROX_RULES_BY_LANG.default || {};
+  const baseRules =
+    langCode && APPROX_RULES_BY_LANG[langCode]
+      ? APPROX_RULES_BY_LANG[langCode]
+      : APPROX_RULES_BY_LANG.default || {};
+  const coverageThreshold = getApproxThresholdFromIndex(state.approxLevelIndex);
+  return { ...baseRules, coverageThreshold };
 }
 
 function orderedCharacterCoverage(target, candidate) {

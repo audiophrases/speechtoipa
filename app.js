@@ -23,7 +23,7 @@ const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
 const CEFR_LEVELS = [50, 60, 70, 80, 90, 100];
-const DEFAULT_CEFR_INDEX = 2;
+const DEFAULT_CEFR_INDEX = 0;
 
 const MASTER_CSV_URLS = {
   ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
@@ -513,7 +513,7 @@ function getApproxThresholdFromIndex(index) {
 function updateApproxLabel() {
   if (!els.approxLabel) return;
   const level = CEFR_LEVELS[clampCefrIndex(state.approxLevelIndex)] || CEFR_LEVELS[DEFAULT_CEFR_INDEX];
-  els.approxLabel.textContent = `Approximation tolerance: for Accuracy ${level}%:`;
+  els.approxLabel.textContent = `Accuracy ${level}%`;
 }
 
 function readStoredProgressData() {

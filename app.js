@@ -22,14 +22,7 @@ const CUSTOM_LESSON_ID = 'custom';
 const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
-const CEFR_LEVELS = [
-  { label: 'A1', value: 50 },
-  { label: 'A2', value: 60 },
-  { label: 'B1', value: 70 },
-  { label: 'B2', value: 80 },
-  { label: 'C1', value: 90 },
-  { label: 'C2', value: 100 },
-];
+const CEFR_LEVELS = [50, 60, 70, 80, 90, 100];
 const DEFAULT_CEFR_INDEX = 2;
 
 const MASTER_CSV_URLS = {
@@ -512,19 +505,15 @@ function clampCefrIndex(index) {
   return Math.min(max, Math.max(0, Math.round(index)));
 }
 
-function getCefrLevel(index) {
-  return CEFR_LEVELS[clampCefrIndex(index)] || CEFR_LEVELS[DEFAULT_CEFR_INDEX];
-}
-
 function getApproxThresholdFromIndex(index) {
-  const level = getCefrLevel(index);
-  return level.value / 100;
+  const level = CEFR_LEVELS[clampCefrIndex(index)] || CEFR_LEVELS[DEFAULT_CEFR_INDEX];
+  return level / 100;
 }
 
 function updateApproxLabel() {
   if (!els.approxLabel) return;
-  const level = getCefrLevel(state.approxLevelIndex);
-  els.approxLabel.textContent = `Approximation tolerance: ${level.label} (${level.value}%)`;
+  const level = CEFR_LEVELS[clampCefrIndex(state.approxLevelIndex)] || CEFR_LEVELS[DEFAULT_CEFR_INDEX];
+  els.approxLabel.textContent = `Approximation tolerance: for Accuracy ${level}%:`;
 }
 
 function readStoredProgressData() {

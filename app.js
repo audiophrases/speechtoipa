@@ -335,29 +335,6 @@ async function playTtsBlob(blob, rate = 1.0) {
   await playbackFinished;
 }
 
-async function playTtsUrl(url, rate = 1.0) {
-  if (!url) return false;
-  const audio = new Audio();
-  audio.src = url;
-  audio.preload = 'auto';
-  audio.playbackRate = rate;
-
-  const playbackFinished = new Promise((resolve) => {
-    audio.onended = () => resolve(true);
-    audio.onerror = () => resolve(false);
-  });
-
-  try {
-    await audio.play();
-    setStatus('Playing audio from TTS service.');
-  } catch (err) {
-    console.error('Failed to play TTS service audio URL', err);
-    return false;
-  }
-
-  return playbackFinished;
-}
-
 function parseCsvToObjects(text) {
   const rows = [];
   let current = '';
@@ -1563,18 +1540,12 @@ function createPlaybackQueue() {
   }
 
   async function speakWithService(item) {
-    const baseUrl = getTtsBaseUrl();
-    const ttsUrl = buildTtsRequestUrl(baseUrl, item.text, item.langCode);
     try {
       const blob = await fetchTtsAudio(item.text, item.langCode);
       await playTtsBlob(blob, item.rate);
       return true;
     } catch (err) {
       console.error('TTS service request failed', err);
-      const playedViaUrl = await playTtsUrl(ttsUrl, item.rate);
-      if (playedViaUrl) {
-        return true;
-      }
       setStatus('TTS service unavailable. Check configuration and try again.');
       return false;
     }

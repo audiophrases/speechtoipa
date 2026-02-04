@@ -486,7 +486,6 @@ if (typeof document !== 'undefined') {
 function cacheElements() {
   els.targetSelect = document.getElementById('target-lang');
   els.voiceSelect = document.getElementById('voice-select');
-  els.voiceNote = document.getElementById('voice-note');
   els.baseSelect = document.getElementById('base-lang');
   els.lessonSelect = document.getElementById('lesson-select');
   els.approxSlider = document.getElementById('approx-slider');
@@ -652,23 +651,6 @@ function populateVoiceSelect() {
 
   const stored = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
   els.voiceSelect.value = stored;
-  updateVoiceNote();
-}
-
-function updateVoiceNote() {
-  if (!els.voiceNote) return;
-  if (!normalizedVoices.length) {
-    els.voiceNote.textContent = '';
-    return;
-  }
-
-  const selection = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
-  if (selection === AUTO_VOICE_VALUE) {
-    els.voiceNote.textContent = '';
-  } else {
-    const [, name] = selection.split('|');
-    els.voiceNote.textContent = name;
-  }
 }
 
 function getLessonsForLang(lang) {
@@ -880,7 +862,6 @@ function attachEventListeners() {
     voiceSelections[state.targetLang] = els.voiceSelect.value;
     playbackQueue.resetWarmup(getLangCode(state.targetLang));
     persistVoices();
-    updateVoiceNote();
     updatePlaybackWarnings();
   });
 }

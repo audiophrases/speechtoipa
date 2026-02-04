@@ -521,6 +521,7 @@ function cacheElements() {
   els.next = document.getElementById('next-btn');
   els.playbackWarnings = document.getElementById('playback-warnings');
   els.status = document.getElementById('status');
+  els.ttsBaseUrlDebug = document.getElementById('tts-base-url-debug');
   els.transcript = document.getElementById('transcript');
   els.feedback = document.getElementById('feedback');
   els.customInput = document.getElementById('custom-sentence');
@@ -528,6 +529,19 @@ function cacheElements() {
   els.customReset = document.getElementById('custom-reset');
   els.customModal = document.getElementById('custom-modal');
   els.customDismissButtons = Array.from(document.querySelectorAll('[data-close-modal]'));
+
+  if (els.status && !els.ttsBaseUrlDebug) {
+    els.ttsBaseUrlDebug = document.createElement('div');
+    els.ttsBaseUrlDebug.id = 'tts-base-url-debug';
+    els.ttsBaseUrlDebug.className = 'status status-inline status-debug';
+    els.status.insertAdjacentElement('afterend', els.ttsBaseUrlDebug);
+  }
+
+  if (els.ttsBaseUrlDebug) {
+    const resolvedBaseUrl = getTtsBaseUrl();
+    els.ttsBaseUrlDebug.textContent = `TTS base URL: ${resolvedBaseUrl}`;
+    console.log('Resolved TTS base URL:', resolvedBaseUrl);
+  }
 }
 
 function createTooltips() {

@@ -615,7 +615,7 @@ function populateVoiceSelect() {
 function updateVoiceNote() {
   if (!els.voiceNote) return;
   if (!normalizedVoices.length) {
-    els.voiceNote.textContent = 'Voices will appear after your browser loads them.';
+    els.voiceNote.textContent = '';
     return;
   }
 

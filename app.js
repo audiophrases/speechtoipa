@@ -50,6 +50,7 @@ const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
 const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
 const ttsAudioCache = new Map();
 const AUTO_VOICE_VALUE = 'auto';
+const SILENT_AUDIO_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
 const CURATED_VOICE_PRIORITIES = {
   ar: ['ar-MA', 'ar-SA', 'ar-EG', 'ar'],
   ca: ['ca-ES', 'es-ES'],
@@ -153,6 +154,8 @@ const state = {
   shouldAutoRestartRecognition: false,
   ttsLoading: false,
   approxLevelIndex: DEFAULT_CEFR_INDEX,
+  audioUnlocked: false,
+  ttsAudioElement: null,
 };
 
 const els = {};
@@ -309,19 +312,24 @@ async function fetchTtsAudio(text, langCode) {
 
 async function playTtsBlob(blob, rate = 1.0) {
   if (!blob) return;
+  if (!state.audioUnlocked) {
+    setStatus('Tap Play again to enable audio.');
+    await unlockAudioPlayback();
+    if (!state.audioUnlocked) return;
+  }
   const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
+  const audio = getPlaybackAudioElement();
+  if (!audio) return;
+  audio.src = url;
   audio.playbackRate = rate;
 
   const playbackFinished = new Promise((resolve) => {
-    audio.onended = () => {
+    const finish = () => {
       URL.revokeObjectURL(url);
       resolve();
     };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve();
-    };
+    audio.onended = finish;
+    audio.onerror = finish;
   });
 
   try {
@@ -333,6 +341,41 @@ async function playTtsBlob(blob, rate = 1.0) {
   }
 
   await playbackFinished;
+}
+
+function getPlaybackAudioElement() {
+  if (state.ttsAudioElement) return state.ttsAudioElement;
+  if (typeof Audio === 'undefined') return null;
+  const audio = new Audio();
+  audio.preload = 'auto';
+  state.ttsAudioElement = audio;
+  return audio;
+}
+
+async function unlockAudioPlayback() {
+  if (state.audioUnlocked) return true;
+  const audio = getPlaybackAudioElement();
+  if (!audio) return false;
+
+  let url = '';
+  try {
+    const blob = base64ToBlob(SILENT_AUDIO_BASE64, 'audio/wav');
+    url = URL.createObjectURL(blob);
+    audio.src = url;
+    audio.muted = true;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+    state.audioUnlocked = true;
+    updatePlaybackWarnings();
+    return true;
+  } catch (err) {
+    console.warn('Unable to unlock audio playback', err);
+    return false;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+  }
 }
 
 function parseCsvToObjects(text) {
@@ -621,7 +664,7 @@ function updateVoiceNote() {
 
   const selection = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
   if (selection === AUTO_VOICE_VALUE) {
-    els.voiceNote.textContent = 'Auto picks the best match for each language.';
+    els.voiceNote.textContent = '';
   } else {
     const [, name] = selection.split('|');
     els.voiceNote.textContent = name;
@@ -757,8 +800,8 @@ function attachEventListeners() {
     setApproxLevel(nextIndex);
   });
 
-  els.play.addEventListener('click', () => speakCurrent(1));
-  els.slow.addEventListener('click', () => speakCurrent(0.7));
+  els.play.addEventListener('click', () => handlePlaybackClick(1));
+  els.slow.addEventListener('click', () => handlePlaybackClick(0.7));
   els.next.addEventListener('click', () => goToNext());
   els.record.addEventListener('click', startRecording);
   els.stop.addEventListener('click', stopRecording);
@@ -829,7 +872,7 @@ function attachEventListeners() {
 
     if (event.key === 'p' || event.key === 'P') {
       event.preventDefault();
-      speakCurrent(1);
+      handlePlaybackClick(1);
     }
   });
 
@@ -1496,7 +1539,6 @@ function createPlaybackQueue() {
 
     const promise = (async () => {
       isWarming = true;
-      setStatus('Preparing audio…');
       try {
         await waitForVoicesReady();
         return getVoiceForLang(langCode);
@@ -1630,6 +1672,10 @@ async function speakSentence(text, langCode, rate = 1.0) {
     return;
   }
 
+  if (isMobileDevice() && !state.audioUnlocked) {
+    await unlockAudioPlayback();
+  }
+
   await playbackQueue.warmVoicesForLang(langCode);
   state.supportsTtsService = Boolean(getTtsBaseUrl());
   playbackQueue.enqueue({ text, langCode, rate });
@@ -1645,6 +1691,17 @@ function speakCurrent(rate = 1) {
 function speakWord(text, rate = 1) {
   if (!text) return;
   speakSentence(text, getLangCode(state.targetLang), rate);
+}
+
+async function handlePlaybackClick(rate) {
+  if (isMobileDevice() && !state.audioUnlocked) {
+    await unlockAudioPlayback();
+    if (!state.audioUnlocked) {
+      setStatus('Tap Play again to enable audio.');
+      return;
+    }
+  }
+  speakCurrent(rate);
 }
 
 function initRecognition() {
@@ -1860,6 +1917,9 @@ function updatePlaybackWarnings() {
   if (voiceWarning || playbackUnavailable) {
     const browserWarning = buildBrowserRecommendation();
     if (browserWarning) parts.push(browserWarning);
+  }
+  if (isMobileDevice()) {
+    parts.push('Mobile browsers require a tap to enable audio playback.');
   }
   els.playbackWarnings.textContent = parts.join(' ');
 }

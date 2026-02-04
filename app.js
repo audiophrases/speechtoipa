@@ -1711,6 +1711,60 @@ function speakWord(text, rate = 1) {
   speakSentence(text, getLangCode(state.targetLang), rate);
 }
 
+function getBestVoiceSync(langCode) {
+  if (!isSpeechSynthesisSupported()) return null;
+  const synth = window.speechSynthesis;
+  if (!synth) return null;
+  const voices = synth.getVoices();
+  if (!voices || !voices.length) return null;
+
+  const target = String(langCode || '').toLowerCase();
+  const priorities = CURATED_VOICE_PRIORITIES[(target.split('-')[0] || target)] || [];
+
+  // Prefer curated priorities first.
+  for (const pref of priorities) {
+    const match = voices.find((v) => String(v.lang || '').toLowerCase() === String(pref).toLowerCase());
+    if (match) return match;
+  }
+
+  // Then any voice that matches language prefix.
+  const prefix = target.split('-')[0];
+  const byPrefix = voices.find((v) => String(v.lang || '').toLowerCase().startsWith(prefix));
+  if (byPrefix) return byPrefix;
+
+  return voices[0] || null;
+}
+
+function speakCurrentImmediate(rate = 1) {
+  if (!state.sentences.length) return false;
+  const text = currentSentence().text;
+  const langCode = getLangCode(state.targetLang);
+  if (!text || !isSpeechSynthesisSupported()) return false;
+
+  const synth = window.speechSynthesis;
+  if (!synth) return false;
+
+  // Mobile browsers are picky about gesture timing; keep this sync.
+  try {
+    synth.cancel();
+    if (synth.paused) synth.resume();
+  } catch (_) {}
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = langCode;
+  utterance.rate = rate;
+  const voice = getBestVoiceSync(langCode);
+  if (voice) utterance.voice = voice;
+
+  utterance.onerror = () => {
+    // Fall back to the existing async pipeline (service TTS if needed).
+    speakCurrent(rate);
+  };
+
+  synth.speak(utterance);
+  return true;
+}
+
 async function handlePlaybackClick(rate) {
   if (isMobileDevice() && !state.audioUnlocked) {
     await unlockAudioPlayback();
@@ -1719,6 +1773,18 @@ async function handlePlaybackClick(rate) {
       return;
     }
   }
+
+  // On mobile, try a synchronous speechSynthesis play first.
+  if (isMobileDevice()) {
+    // Try to force voices to load.
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.getVoices();
+    } catch (_) {}
+
+    const started = speakCurrentImmediate(rate);
+    if (started) return;
+  }
+
   speakCurrent(rate);
 }
 

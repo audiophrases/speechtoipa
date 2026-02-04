@@ -298,34 +298,57 @@ async function fetchTtsAudio(text, langCode) {
   setStatus('Fetching audio from TTS service…');
   try {
     const url = buildTtsRequestUrl(baseUrl, text, langCode);
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`TTS service returned ${res.status}`);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`TTS service returned ${res.status}`);
+      }
+      const blob = await res.blob();
+      await cacheTts(cacheKey, blob, text);
+      return blob;
+    } catch (err) {
+      if (isGoogleTranslateTts(baseUrl)) {
+        const audio = getPlaybackAudioElement();
+        if (audio) {
+          audio.src = url;
+          return { directUrl: url };
+        }
+      }
+      throw err;
     }
-    const blob = await res.blob();
-    await cacheTts(cacheKey, blob, text);
-    return blob;
   } finally {
     setTtsLoading(false);
   }
 }
 
-async function playTtsBlob(blob, rate = 1.0) {
-  if (!blob) return;
+async function playTtsBlob(source, rate = 1.0) {
+  if (!source) return;
   if (!state.audioUnlocked) {
     setStatus('Tap Play again to enable audio.');
     await unlockAudioPlayback();
     if (!state.audioUnlocked) return;
   }
-  const url = URL.createObjectURL(blob);
   const audio = getPlaybackAudioElement();
   if (!audio) return;
+  let url = '';
+  let shouldRevoke = false;
+  if (source instanceof Blob) {
+    url = URL.createObjectURL(source);
+    shouldRevoke = true;
+  } else if (typeof source === 'string') {
+    url = source;
+  } else if (source && source.directUrl) {
+    url = source.directUrl;
+  }
+  if (!url) return;
   audio.src = url;
   audio.playbackRate = rate;
 
   const playbackFinished = new Promise((resolve) => {
     const finish = () => {
-      URL.revokeObjectURL(url);
+      if (shouldRevoke) {
+        URL.revokeObjectURL(url);
+      }
       resolve();
     };
     audio.onended = finish;

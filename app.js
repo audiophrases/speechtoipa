@@ -2531,9 +2531,12 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     wordStatus[i] = 'correct';
   }
 
+  // IMPORTANT: don't slice spoken tokens by lockedPrefix.
+  // SpeechRecognition can merge/split words (e.g., "bon dia" -> "bondia"),
+  // so assuming 1 spoken token per target token can drop remaining words.
   const matches = findMatchesForTargetTokens(
     targetTokens.slice(lockedPrefix),
-    filteredTokens.slice(lockedPrefix)
+    filteredTokens
   );
 
   for (let i = 0; i < matches.length; i++) {

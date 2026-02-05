@@ -2631,7 +2631,24 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   updateWordSpanClasses();
 
   if (els.transcript) {
-    els.transcript.textContent = filteredTranscript;
+    let displayTranscript = filteredTranscript;
+
+    // Darija STT on mobile can return a repeated, no-whitespace loop.
+    // For UX, show a clean single sentence instead of the repeated blob.
+    if (state.targetLang === 'ma') {
+      const raw = (rawTranscript || '').trim();
+      const hasWhitespace = /\s/.test(raw);
+      if (!hasWhitespace && raw.length > 40) {
+        // Prefer the expected sentence text (Arabic) when available.
+        try {
+          displayTranscript = currentSentence().text || filteredTranscript;
+        } catch (_) {
+          displayTranscript = filteredTranscript;
+        }
+      }
+    }
+
+    els.transcript.textContent = displayTranscript;
   }
 
   checkIfSentenceCompleteAndStop({ allowAutoStop: true });

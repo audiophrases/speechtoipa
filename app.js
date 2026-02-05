@@ -360,7 +360,8 @@ async function playTtsBlob(source, rate = 1.0) {
     setStatus('Playing audio from TTS service.');
   } catch (err) {
     console.error('Failed to play fetched audio', err);
-    setStatus('Could not play fetched audio.');
+    const recommendation = buildBrowserRecommendation();
+    setStatus(recommendation ? `Could not play fetched audio. ${recommendation}` : 'Could not play fetched audio.');
   }
 
   await playbackFinished;
@@ -1494,7 +1495,7 @@ function warnIfArabicVoiceMissing() {
 
   if (!ensureArabicVoiceAvailable()) {
     hasWarnedAboutArabicVoice = true;
-    alert('Arabic TTS is not available in Chrome on this system. For best results, use Microsoft Edge.');
+    alert('Arabic TTS is not available in your current browser/system voice set. Try another browser (Chrome, Safari, or Edge) or select a different voice if available.');
   }
 }
 
@@ -1986,10 +1987,17 @@ function buildVoiceWarning(targetLangCode) {
 function buildBrowserRecommendation() {
   if (typeof navigator === 'undefined') return '';
   const ua = navigator.userAgent.toLowerCase();
-  const isChrome = ua.includes('chrome') && !ua.includes('edg');
+  const isOpera = ua.includes('opr/') || ua.includes('opera');
+  const isChrome = ua.includes('chrome') && !ua.includes('edg') && !isOpera;
   const isEdge = ua.includes('edg');
-  if (isChrome || isEdge) return '';
-  return 'For best playback, use the latest Chrome or Microsoft Edge.';
+  const isSafari = ua.includes('safari') && !ua.includes('chrome') && !ua.includes('crios') && !ua.includes('fxios');
+  const isFirefox = ua.includes('firefox') || ua.includes('fxios');
+
+  // If you're already on a mainstream browser, don't nag.
+  if (isChrome || isEdge || isSafari || isFirefox) return '';
+
+  if (isOpera) return 'Playback may be unreliable in Opera. If audio fails, try Chrome or Safari.';
+  return 'If audio playback fails, try another browser (Chrome or Safari).';
 }
 
 function updatePlaybackWarnings() {

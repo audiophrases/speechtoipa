@@ -1793,15 +1793,27 @@ function initRecognition() {
   state.recognition.interimResults = true;
   state.recognition.maxAlternatives = 1;
 
-  state.recognition.onresult = (event) => {
-    let transcript = '';
+  // Keep a stable transcript: accumulate finalized chunks + latest interim chunk.
+  // This prevents duplicate loops like "سلامسلامسلام..." from overlapping interim results.
+  let finalTranscript = '';
 
-    for (let i = 0; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript + ' ';
+  state.recognition.onresult = (event) => {
+    let interim = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      const text = (res && res[0] && res[0].transcript ? res[0].transcript : '').trim();
+      if (!text) continue;
+
+      if (res.isFinal) {
+        finalTranscript = (finalTranscript + ' ' + text).trim();
+      } else {
+        // Keep only the most recent interim (avoids repetition loops)
+        interim = text;
+      }
     }
 
-    transcript = transcript.trim();
-
+    const transcript = (finalTranscript + (interim ? ' ' + interim : '')).trim();
     const lastResult = event.results[event.results.length - 1];
     const isFinalResult = Boolean(lastResult && lastResult.isFinal);
 

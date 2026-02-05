@@ -214,9 +214,9 @@ textarea {
 }
 
 .sentence {
-  font-size: 1.35rem;
-  line-height: 1.6;
-  min-height: 64px;
+  font-size: 1.65rem;
+  line-height: 1.65;
+  min-height: 76px;
   margin-bottom: 1rem;
 }
 
@@ -245,15 +245,17 @@ textarea {
 .status {
   min-height: 24px;
   color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .status-inline {
   margin-top: -0.35rem;
   margin-bottom: 0.25rem;
+  font-size: 0.78rem;
 }
 
 .transcript {
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   color: var(--muted);
   min-height: 20px;
 }

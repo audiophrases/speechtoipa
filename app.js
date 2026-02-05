@@ -1821,6 +1821,9 @@ function initRecognition() {
   };
 
   state.recognition.onstart = () => {
+    // Reset per-recording session so we don't carry a previous sentence into the next attempt.
+    finalTranscript = '';
+
     state.recording = true;
     setStatus('Listening...');
     updateRecordState();

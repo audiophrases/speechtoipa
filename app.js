@@ -2479,12 +2479,40 @@ function passesApproximationRule(target, candidate, langCode) {
   return orderedCharacterCoverage(target, candidate) >= coverageThreshold;
 }
 
+function normalizeDarijaLatnVariant(token) {
+  if (!token) return '';
+  let s = String(token).toLowerCase();
+  // formatting variants
+  s = s.replace(/[\-’'`]/g, '');
+  // common digraph variation seen in user data
+  s = s.replace(/\bch\b/g, 'sh');
+  // collapse repeated letters (e.g. aa -> a)
+  s = s.replace(/([a-z])\1{1,}/g, '$1');
+  return s;
+}
+
+function darijaConsonantSkeleton(token) {
+  // A conservative "skeleton" matcher for MA latin:
+  // remove short vowels so "slam" ~ "salam" without hardcoding every word.
+  const s = normalizeDarijaLatnVariant(token);
+  return s.replace(/[aeiouə]/g, '');
+}
+
 function similarityScore(rawTarget, rawCandidate, langCode) {
   const target = normalizeToken(rawTarget, langCode);
   const cand = normalizeToken(rawCandidate, langCode);
   if (!target || !cand) return 0;
 
   if (target === cand) return 1;
+
+  // Darija latin: allow vowel-omission variants by comparing consonant skeletons.
+  if ((langCode || state.targetLang) === 'ma' && /[a-z]/i.test(target) && /[a-z]/i.test(cand)) {
+    const skT = darijaConsonantSkeleton(target);
+    const skC = darijaConsonantSkeleton(cand);
+    if (skT && skT === skC) {
+      return 0.92;
+    }
+  }
 
   const equiv = EQUIV_GROUPS[target];
   if (equiv && equiv.includes(cand)) {

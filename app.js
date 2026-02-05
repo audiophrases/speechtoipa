@@ -1274,7 +1274,18 @@ function renderCurrentSentence() {
       translations: tokenObj.translations || {},
       transcription: tokenObj.transcription || '',
     }));
-    targetTokens = tokenizeText(fullText, state.targetLang);
+
+    // Scoring tokens
+    // For Darija (MA), use ma_latn per-token transcriptions as the matching backbone.
+    if (state.targetLang === 'ma') {
+      const latnTokens = tokensForMatching
+        .map((t) => t.transcription)
+        .map((t) => normalizeToken(t, 'ma'))
+        .filter(Boolean);
+      targetTokens = latnTokens.length ? latnTokens : tokenizeText(fullText, state.targetLang);
+    } else {
+      targetTokens = tokenizeText(fullText, state.targetLang);
+    }
 
     let pos = 0;
 
@@ -2565,12 +2576,54 @@ function shouldIgnoreHotkey(event) {
   return false;
 }
 
+function buildDarijaSpokenTokens(transcript, sentence) {
+  const raw = String(transcript || '').trim();
+  if (!raw) return { spokenTokens: [], spokenTranscript: '' };
+
+  // If recognizer gives Latin/space-delimited text, just tokenize normally.
+  if (!/[\u0600-\u06FF]/.test(raw) && /[a-zA-Z]/.test(raw)) {
+    const spokenTokens = tokenizeText(raw, 'ma');
+    return { spokenTokens, spokenTranscript: spokenTokens.join(' ') };
+  }
+
+  const tokens = sentence?.tokens || [];
+  if (!tokens.length) {
+    const spokenTokens = tokenizeText(raw, 'ma');
+    return { spokenTokens, spokenTranscript: spokenTokens.join(' ') };
+  }
+
+  // Arabic-script path: segment the recognized blob by searching expected Arabic token surfaces,
+  // then emit the aligned ma_latn token (transcription) for scoring.
+  const recognized = normalizeArabicToken(raw);
+  let pos = 0;
+  const spokenTokens = [];
+
+  tokens.forEach((t) => {
+    const surface = normalizeArabicToken(t.surface || '');
+    const latn = normalizeToken(t.transcription || '', 'ma');
+    if (!surface || !latn) return;
+
+    const idx = recognized.indexOf(surface, pos);
+    if (idx !== -1) {
+      spokenTokens.push(latn);
+      pos = idx + surface.length;
+    }
+  });
+
+  return { spokenTokens, spokenTranscript: spokenTokens.join(' ') };
+}
+
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
-  const { filteredTokens, filteredTranscript, rawTranscript } = filterUnexpectedRepeats(
-    transcript,
-    targetTokens,
-    state.targetLang
-  );
+  const sentence = currentSentence();
+
+  // For Darija, score against ma_latn token backbone.
+  const darijaResult = state.targetLang === 'ma' ? buildDarijaSpokenTokens(transcript, sentence) : null;
+  const baseResult =
+    state.targetLang === 'ma'
+      ? { filteredTokens: darijaResult.spokenTokens, filteredTranscript: darijaResult.spokenTranscript, rawTranscript: transcript }
+      : filterUnexpectedRepeats(transcript, targetTokens, state.targetLang);
+
+  const { filteredTokens, filteredTranscript, rawTranscript } = baseResult;
 
   lastTranscript = filteredTranscript;
 
@@ -2655,11 +2708,14 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
 }
 
 function finalizeScore(transcript) {
-  const { filteredTokens, filteredTranscript, rawTranscript } = filterUnexpectedRepeats(
-    transcript,
-    targetTokens,
-    state.targetLang
-  );
+  const sentence = currentSentence();
+  const darijaResult = state.targetLang === 'ma' ? buildDarijaSpokenTokens(transcript, sentence) : null;
+  const baseResult =
+    state.targetLang === 'ma'
+      ? { filteredTokens: darijaResult.spokenTokens, filteredTranscript: darijaResult.spokenTranscript, rawTranscript: transcript }
+      : filterUnexpectedRepeats(transcript, targetTokens, state.targetLang);
+
+  const { filteredTokens, filteredTranscript, rawTranscript } = baseResult;
   lastTranscript = filteredTranscript;
 
   const matches = findMatchesForTargetTokens(targetTokens, filteredTokens);

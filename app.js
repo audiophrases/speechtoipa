@@ -1,4 +1,4 @@
-const TARGET_LANGS = [
+﻿const TARGET_LANGS = [
   { code: 'en', label: 'English' },
   { code: 'fr', label: 'French' },
   { code: 'ca', label: 'Catalan' },
@@ -522,7 +522,8 @@ function cacheElements() {
   els.next = document.getElementById('next-btn');
   els.playbackWarnings = document.getElementById('playback-warnings');
   els.status = document.getElementById('status');
-  els.ttsBaseUrlDebug = document.getElementById('tts-base-url-debug');
+  // removed: tts base url debug element (too noisy for UI)
+  els.ttsBaseUrlDebug = null;
   els.transcript = document.getElementById('transcript');
   els.feedback = document.getElementById('feedback');
   els.customInput = document.getElementById('custom-sentence');
@@ -2643,3 +2644,4 @@ if (typeof module !== 'undefined' && module.exports) {
     filterUnexpectedRepeats,
   };
 }
+

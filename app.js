@@ -2004,9 +2004,35 @@ function updateSpeechSynthesisState({ announce = false } = {}) {
   updatePlaybackWarnings();
 }
 
+function normalizeArabicToken(s) {
+  if (!s) return '';
+  s = String(s).normalize('NFC');
+  // Remove Arabic diacritics + tatweel (includes combining hamza marks)
+  s = s.replace(/[\u064B-\u065F\u0670\u0640]/g, '');
+  // Unify common letter variants
+  s = s
+    .replace(/[\u0622\u0623\u0625\u0671]/g, 'ا') // آأإٱ -> ا
+    .replace(/\u0624/g, 'و') // ؤ -> و
+    .replace(/\u0626/g, 'ي') // ئ -> ي
+    .replace(/\u0629/g, 'ه') // ة -> ه
+    .replace(/\u0649/g, 'ي'); // ى -> ي
+  // Remove punctuation/whitespace-like chars
+  s = s.replace(/[\s\u200f\u200e.,!?;:;()"«»¿¡]/g, '');
+  return s;
+}
+
 function normalizeWord(w) {
   if (!w) return '';
-  return w
+  let s = String(w).trim();
+
+  // If this is Darija mode, normalize Arabic-script tokens more aggressively
+  // so variants like "أمينة" vs "امينه" match.
+  if (state && state.targetLang === 'ma') {
+    const arabic = normalizeArabicToken(s);
+    if (arabic) return arabic;
+  }
+
+  return s
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')

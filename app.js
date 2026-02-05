@@ -2011,7 +2011,7 @@ function updateSpeechSynthesisState({ announce = false } = {}) {
 function normalizeArabicToken(s) {
   if (!s) return '';
   s = String(s).normalize('NFC');
-  // Remove Arabic diacritics + tatweel (includes combining hamza marks)
+  // Remove Arabic diacritics + tatweel
   s = s.replace(/[\u064B-\u065F\u0670\u0640]/g, '');
   // Unify common letter variants
   s = s
@@ -2020,8 +2020,8 @@ function normalizeArabicToken(s) {
     .replace(/\u0626/g, 'ي') // ئ -> ي
     .replace(/\u0629/g, 'ه') // ة -> ه
     .replace(/\u0649/g, 'ي'); // ى -> ي
-  // Remove punctuation/whitespace-like chars
-  s = s.replace(/[\s\u200f\u200e.,!?;:;()"«»¿¡]/g, '');
+  // Remove punctuation/whitespace-like chars (incl Arabic punctuation)
+  s = s.replace(/[\s\u200f\u200e\u060C\u061B\u061F.,!?;:;()"«»¿¡]/g, '');
   return s;
 }
 
@@ -2288,6 +2288,19 @@ function normalizeToken(rawToken, langCode) {
 
 function tokenizeText(t, langCode) {
   const timeNormalized = normalizeTimeTokens(t, langCode);
+
+  // For Arabic-script (Darija) we can't rely on whitespace tokenization.
+  // Also strip Arabic punctuation like "،" and normalize before splitting.
+  if ((langCode || state.targetLang) === 'ma') {
+    const cleaned = normalizeWord(timeNormalized)
+      .replace(/[\u060C\u061B\u061F]/g, ' ') // Arabic comma/semicolon/question
+      .replace(/[.,!?;:;()"«»¿¡]/g, ' ');
+
+    // If there are spaces, use them. Otherwise keep as one token.
+    const parts = cleaned.includes(' ') ? cleaned.split(/\s+/) : [cleaned];
+    return parts.map((token) => normalizeToken(token, langCode)).filter(Boolean);
+  }
+
   return normalizeWord(timeNormalized)
     .split(/\s+/)
     .map((token) => normalizeToken(token, langCode))
@@ -2316,6 +2329,23 @@ function buildMaxConsecutiveRuns(tokens) {
   return maxRuns;
 }
 
+function collapseConsecutiveDuplicates(tokens, maxRun = 1) {
+  const out = [];
+  let prev = null;
+  let run = 0;
+  for (const t of tokens) {
+    if (t === prev) {
+      run += 1;
+      if (run <= maxRun) out.push(t);
+    } else {
+      prev = t;
+      run = 1;
+      out.push(t);
+    }
+  }
+  return out;
+}
+
 function filterUnexpectedRepeats(transcript, targetTokensForSentence, langCode) {
   const spokenTokens = tokenizeText(transcript, langCode);
   const targetTokensNormalized = targetTokensForSentence || [];
@@ -2331,7 +2361,14 @@ function filterUnexpectedRepeats(transcript, targetTokensForSentence, langCode) 
   let prev = null;
   let runLength = 0;
 
-  spokenTokens.forEach((token) => {
+  // Special case: Darija Arabic scripts often come back without spaces.
+  // If the transcript is one long token, prefer showing it once in the UI.
+  const uiSpokenTokens =
+    (langCode || state.targetLang) === 'ma' && spokenTokens.length === 1
+      ? [spokenTokens[0]]
+      : collapseConsecutiveDuplicates(spokenTokens, 1);
+
+  uiSpokenTokens.forEach((token) => {
     if (token === prev) {
       runLength += 1;
     } else {
@@ -2357,6 +2394,7 @@ function filterUnexpectedRepeats(transcript, targetTokensForSentence, langCode) 
   return {
     filteredTokens,
     filteredTranscript: filteredTokens.join(' '),
+    rawTranscript: transcript,
   };
 }
 
@@ -2539,7 +2577,7 @@ function shouldIgnoreHotkey(event) {
 }
 
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
-  const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
+  const { filteredTokens, filteredTranscript, rawTranscript } = filterUnexpectedRepeats(
     transcript,
     targetTokens,
     state.targetLang
@@ -2611,7 +2649,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
 }
 
 function finalizeScore(transcript) {
-  const { filteredTokens, filteredTranscript } = filterUnexpectedRepeats(
+  const { filteredTokens, filteredTranscript, rawTranscript } = filterUnexpectedRepeats(
     transcript,
     targetTokens,
     state.targetLang

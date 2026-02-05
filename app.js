@@ -2280,8 +2280,15 @@ function digitToNumberWord(token, langCode) {
 }
 
 function normalizeToken(rawToken, langCode) {
-  const token = normalizeWord(rawToken);
+  let token = normalizeWord(rawToken);
   if (!token) return '';
+
+  // Darija (MA) latin: accept common vowel-omission variants.
+  // e.g. "slam" (compact) ≈ "salam" (learner-friendly)
+  if ((langCode || state.targetLang) === 'ma' && /[a-z]/i.test(token)) {
+    if (token === 'slam') token = 'salam';
+  }
+
   if (DIGIT_TOKEN_PATTERN.test(token)) {
     const numberWord = digitToNumberWord(token, langCode);
     return normalizeWord(numberWord);

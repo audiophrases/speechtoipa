@@ -1946,41 +1946,8 @@ function restartRecognitionSession() {
   }, 150);
 }
 
-function buildVoiceWarning(targetLangCode) {
-  if (!els.playbackWarnings) return '';
-  const langCode = getLangCode(targetLangCode);
-  const base = langCode.split('-')[0];
-  const selection = voiceSelections[targetLangCode];
-
-  if (!window.speechSynthesis) {
-    return 'No local text-to-speech is available; playback will use the configured TTS service if set.';
-  }
-
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices || !voices.length) return '';
-
-  const preferred = selection && selection !== AUTO_VOICE_VALUE ? selection.split('|')[0] : null;
-  const matched = getVoiceForLang(langCode);
-  if (!matched) {
-    return 'No matching voice installed for this language.';
-  }
-
-  const matchedBase = matched.lang.split('-')[0].toLowerCase();
-  const localeMismatch = matched.lang !== langCode;
-  const baseMismatch = matchedBase !== base.toLowerCase();
-
-  if (preferred && matched.lang !== preferred && matchedBase !== preferred.split('-')[0]) {
-    return `Selected voice unavailable; using ${matched.name} (${matched.lang}).`;
-  }
-
-  if (localeMismatch) {
-    return `No ${langCode} voice installed; using ${matched.lang}.`;
-  }
-
-  if (baseMismatch) {
-    return `No ${base} voice installed; using ${matched.lang}.`;
-  }
-
+function buildVoiceWarning(_targetLangCode) {
+  // Intentionally quiet: we only show a simple browser fallback message when needed.
   return '';
 }
 
@@ -1996,8 +1963,7 @@ function buildBrowserRecommendation() {
   // If you're already on a mainstream browser, don't nag.
   if (isChrome || isEdge || isSafari || isFirefox) return '';
 
-  if (isOpera) return 'Playback may be unreliable in Opera. If audio fails, try Chrome or Safari.';
-  return 'If audio playback fails, try another browser (Chrome or Safari).';
+  return 'If audio fails, try another browser.';
 }
 
 function updatePlaybackWarnings() {
@@ -2011,7 +1977,7 @@ function updatePlaybackWarnings() {
     if (browserWarning) parts.push(browserWarning);
   }
   if (isMobileDevice()) {
-    parts.push('Mobile browsers require a tap to enable audio playback.');
+    // Keep warnings minimal.
   }
   els.playbackWarnings.textContent = parts.join(' ');
 }

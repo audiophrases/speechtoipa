@@ -1487,17 +1487,8 @@ function ensureArabicVoiceAvailable() {
 }
 
 function warnIfArabicVoiceMissing() {
-  if (hasWarnedAboutArabicVoice) return;
-  if (state.targetLang !== 'ma') return;
-  if (!window.speechSynthesis) return;
-
-  const voices = speechSynthesis.getVoices();
-  if (!voices || !voices.length) return;
-
-  if (!ensureArabicVoiceAvailable()) {
-    hasWarnedAboutArabicVoice = true;
-    alert('Arabic TTS is not available in your current browser/system voice set. Try another browser (Chrome, Safari, or Edge) or select a different voice if available.');
-  }
+  // Disabled: too noisy, and browser support varies widely on mobile.
+  return;
 }
 
 function getVoiceForLang(langCode) {

@@ -123,6 +123,7 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
 
 let wordSpans = [];
 let targetTokens = [];
+let targetTokenVariants = [];
 let lastTranscript = '';
 let currentSentenceText = '';
 let wordStatus = [];
@@ -402,7 +403,7 @@ async function unlockAudioPlayback() {
   }
 }
 
-function parseCsvToObjects(text) {
+function parseCourseCsv(text) {
   const rows = [];
   let current = '';
   let inQuotes = false;
@@ -459,6 +460,12 @@ function parseCsvToObjects(text) {
       headers.forEach((h, idx) => {
         obj[h] = (cells[idx] || '').trim();
       });
+      if (obj.pronunciation_aliases) {
+        obj.pronunciation_aliases = obj.pronunciation_aliases
+          .split('|')
+          .map((alias) => alias.trim())
+          .filter(Boolean);
+      }
       return obj;
     });
 }
@@ -484,7 +491,7 @@ async function ensureMasterRowsForLang(lang) {
     return null;
   }
   const text = await res.text();
-  const rows = parseCsvToObjects(text);
+  const rows = parseCourseCsv(text);
   MASTER_ROWS_BY_LANG[lang] = rows;
 
   console.log('Loaded master rows for', lang, 'count =', rows.length);
@@ -1096,10 +1103,17 @@ async function loadLesson() {
         });
         const surface = r[l2Col] || '';
         const tokenTranscription = getDarijaTranscription(r);
+        const pronunciationAliases = Array.isArray(r.pronunciation_aliases)
+          ? r.pronunciation_aliases
+          : String(r.pronunciation_aliases || '')
+              .split('|')
+              .map((alias) => alias.trim())
+              .filter(Boolean);
         return {
           surface,
           translations: tokenTranslations,
           transcription: tokenTranscription,
+          pronunciation_aliases: pronunciationAliases,
         };
       });
 
@@ -1273,6 +1287,7 @@ function renderCurrentSentence() {
       surface: tokenObj.surface || '',
       translations: tokenObj.translations || {},
       transcription: tokenObj.transcription || '',
+      pronunciation_aliases: tokenObj.pronunciation_aliases || [],
     }));
 
     // Scoring tokens
@@ -1286,6 +1301,10 @@ function renderCurrentSentence() {
     } else {
       targetTokens = tokenizeText(fullText, state.targetLang);
     }
+    targetTokenVariants = targetTokens.map((token, index) => ({
+      text: token,
+      aliases: tokensForMatching[index]?.pronunciation_aliases || [],
+    }));
 
     let pos = 0;
 
@@ -1348,6 +1367,7 @@ function renderCurrentSentence() {
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
     targetTokens = rawTokens.map((w) => normalizeToken(w, state.targetLang));
+    targetTokenVariants = targetTokens.map((token) => ({ text: token, aliases: [] }));
 
     rawTokens.forEach((word) => {
       const span = document.createElement('span');
@@ -1373,6 +1393,10 @@ function renderCurrentSentence() {
         span.dir = 'rtl';
       }
     });
+  }
+
+  if (!targetTokenVariants.length) {
+    targetTokenVariants = targetTokens.map((token) => ({ text: token, aliases: [] }));
   }
 
   resetSentenceState();
@@ -2529,6 +2553,31 @@ function similarityScore(rawTarget, rawCandidate, langCode) {
   return 1 - normDist;
 }
 
+function scoreTokenWithAliases(targetToken, candidate, langCode) {
+  if (!targetToken || !candidate) return 0;
+
+  const primary =
+    typeof targetToken === 'string' ? targetToken : targetToken.text || targetToken.surface || '';
+  const aliases =
+    typeof targetToken === 'string'
+      ? []
+      : Array.isArray(targetToken.aliases)
+        ? targetToken.aliases
+        : Array.isArray(targetToken.pronunciation_aliases)
+          ? targetToken.pronunciation_aliases
+          : [];
+
+  let bestScore = similarityScore(primary, candidate, langCode);
+  aliases.forEach((alias) => {
+    const aliasScore = similarityScore(alias, candidate, langCode);
+    if (aliasScore > bestScore) {
+      bestScore = aliasScore;
+    }
+  });
+
+  return bestScore;
+}
+
 function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {}) {
   const matches = new Array(targetTokens.length).fill(null);
   const usedUntil = { value: 0 };
@@ -2545,7 +2594,7 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
       for (let end = start; end < Math.min(S, start + MAX_WINDOW); end++) {
         const windowTokens = spokenTokens.slice(start, end + 1);
         const concatenated = normalizeWord(windowTokens.join(''));
-        const score = similarityScore(target, concatenated, targetLang);
+        const score = scoreTokenWithAliases(target, concatenated, targetLang);
         if (!best || score > best.score) {
           best = { start, end, score };
         }
@@ -2683,7 +2732,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   // SpeechRecognition can merge/split words (e.g., "bon dia" -> "bondia"),
   // so assuming 1 spoken token per target token can drop remaining words.
   const matches = findMatchesForTargetTokens(
-    targetTokens.slice(lockedPrefix),
+    targetTokenVariants.slice(lockedPrefix),
     filteredTokens
   );
 
@@ -2756,7 +2805,7 @@ function finalizeScore(transcript) {
   const { filteredTokens, filteredTranscript, rawTranscript } = baseResult;
   lastTranscript = filteredTranscript;
 
-  const matches = findMatchesForTargetTokens(targetTokens, filteredTokens);
+  const matches = findMatchesForTargetTokens(targetTokenVariants, filteredTokens);
   const correct = matches.filter(Boolean).length;
 
   const score = Math.round((correct / (targetTokens.length || 1)) * 100);
@@ -2785,4 +2834,3 @@ if (typeof module !== 'undefined' && module.exports) {
     filterUnexpectedRepeats,
   };
 }
-

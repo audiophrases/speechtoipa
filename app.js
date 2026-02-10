@@ -22,6 +22,8 @@ const CUSTOM_LESSON_ID = 'custom';
 const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
+const DEFAULT_MATCH_THRESHOLD = 0.7;
+const PROPER_NOUN_THRESHOLD_FLOOR = 0.55;
 const CEFR_LEVELS = [50, 60, 70, 80, 90, 100];
 const DEFAULT_CEFR_INDEX = 0;
 
@@ -477,6 +479,33 @@ function getDarijaTranscription(row) {
     if (row[header]) return row[header];
   }
   return '';
+}
+
+function parseBooleanLikeValue(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return ['1', 'true', 'yes', 'y'].includes(normalized);
+}
+
+function inferProperNounFromTokenRow(row) {
+  if (!row || typeof row !== 'object') return false;
+  const explicitFlag =
+    parseBooleanLikeValue(row.is_proper_noun) ||
+    parseBooleanLikeValue(row.proper_noun) ||
+    parseBooleanLikeValue(row.isProperNoun);
+  if (explicitFlag) return true;
+
+  const pos = String(row.pos || row.part_of_speech || row.token_type || '')
+    .trim()
+    .toLowerCase();
+  if (pos === 'propn' || pos === 'proper_noun' || pos === 'proper noun') {
+    return true;
+  }
+
+  return false;
 }
 
 async function ensureMasterRowsForLang(lang) {
@@ -1114,6 +1143,7 @@ async function loadLesson() {
           translations: tokenTranslations,
           transcription: tokenTranscription,
           pronunciation_aliases: pronunciationAliases,
+          isProperNoun: inferProperNounFromTokenRow(r),
         };
       });
 
@@ -1288,6 +1318,7 @@ function renderCurrentSentence() {
       translations: tokenObj.translations || {},
       transcription: tokenObj.transcription || '',
       pronunciation_aliases: tokenObj.pronunciation_aliases || [],
+      isProperNoun: Boolean(tokenObj.isProperNoun),
     }));
 
     // Scoring tokens
@@ -1304,6 +1335,7 @@ function renderCurrentSentence() {
     targetTokenVariants = targetTokens.map((token, index) => ({
       text: token,
       aliases: tokensForMatching[index]?.pronunciation_aliases || [],
+      isProperNoun: Boolean(tokensForMatching[index]?.isProperNoun),
     }));
 
     let pos = 0;
@@ -2465,6 +2497,7 @@ const EQUIV_GROUPS = {
 const APPROX_RULES_BY_LANG = {
   default: {
     coverageThreshold: DEFAULT_APPROX_THRESHOLD,
+    properNounThreshold: 0.6,
   },
 };
 
@@ -2474,7 +2507,19 @@ function getApproxRules(langCode) {
       ? APPROX_RULES_BY_LANG[langCode]
       : APPROX_RULES_BY_LANG.default || {};
   const coverageThreshold = getApproxThresholdFromIndex(state.approxLevelIndex);
-  return { ...baseRules, coverageThreshold };
+  const properNounThreshold = Math.min(
+    DEFAULT_MATCH_THRESHOLD,
+    Math.max(PROPER_NOUN_THRESHOLD_FLOOR, coverageThreshold)
+  );
+  return { ...baseRules, coverageThreshold, properNounThreshold };
+}
+
+function getTokenMatchThreshold(targetToken, langCode) {
+  const isProperNoun = Boolean(targetToken && typeof targetToken === 'object' && targetToken.isProperNoun);
+  if (!isProperNoun) return DEFAULT_MATCH_THRESHOLD;
+  const { properNounThreshold } = getApproxRules(langCode);
+  if (!Number.isFinite(properNounThreshold)) return DEFAULT_MATCH_THRESHOLD;
+  return properNounThreshold;
 }
 
 function orderedCharacterCoverage(target, candidate) {
@@ -2588,6 +2633,7 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 
   for (let i = 0; i < targetTokens.length; i++) {
     const target = targetTokens[i];
+    const tokenThreshold = getTokenMatchThreshold(target, targetLang);
     let best = null;
 
     for (let start = usedUntil.value; start < S; start++) {
@@ -2601,7 +2647,7 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
       }
     }
 
-    if (best && best.score >= 0.7) {
+    if (best && best.score >= tokenThreshold) {
       matches[i] = best;
       usedUntil.value = best.end + 1;
     } else {

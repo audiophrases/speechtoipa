@@ -221,6 +221,9 @@
         },
         {
           "surface": "Tarragona.",
+          "pronunciation_aliases": [
+            "taragona"
+          ],
           "translations": {
             "es": "Tarragona",
             "en": "Tarragona",

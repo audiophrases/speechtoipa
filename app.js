@@ -908,11 +908,13 @@ function attachEventListeners() {
 
     if (event.key === ' ' || event.code === 'Space') {
       event.preventDefault();
-      if (state.recording) {
-        stopRecording();
-      } else {
-        startRecording();
-      }
+      togglePlayback();
+      return;
+    }
+
+    if (event.key === 'Enter' || event.code === 'NumpadEnter') {
+      event.preventDefault();
+      toggleRecording();
       return;
     }
 
@@ -1835,6 +1837,49 @@ async function handlePlaybackClick(rate) {
   }
 
   speakCurrent(rate);
+}
+
+async function togglePlayback() {
+  const audio = state.ttsAudioElement;
+  const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+
+  if (audio && !audio.paused && !audio.ended) {
+    audio.pause();
+    setStatus('Playback paused.');
+    return;
+  }
+
+  if (synth && synth.speaking && !synth.paused) {
+    synth.pause();
+    setStatus('Playback paused.');
+    return;
+  }
+
+  if (audio && audio.paused && audio.src && audio.currentTime > 0 && !audio.ended) {
+    try {
+      await audio.play();
+      setStatus('Playback resumed.');
+      return;
+    } catch (err) {
+      console.warn('Could not resume audio playback', err);
+    }
+  }
+
+  if (synth && synth.paused) {
+    synth.resume();
+    setStatus('Playback resumed.');
+    return;
+  }
+
+  await handlePlaybackClick(1);
+}
+
+function toggleRecording() {
+  if (state.recording) {
+    stopRecording();
+    return;
+  }
+  startRecording();
 }
 
 function initRecognition() {

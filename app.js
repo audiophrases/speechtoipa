@@ -1867,8 +1867,15 @@ async function togglePlayback() {
 
   if (synth && synth.paused) {
     synth.resume();
-    setStatus('Playback resumed.');
-    return;
+
+    // Some engines can report paused/speaking inconsistently after resume.
+    // If resume does not actually continue playback, restart from the beginning
+    // instead of getting stuck in a paused state.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (synth.speaking && !synth.paused) {
+      setStatus('Playback resumed.');
+      return;
+    }
   }
 
   await handlePlaybackClick(1);

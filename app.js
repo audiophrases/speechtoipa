@@ -2915,7 +2915,7 @@ function finalizeScore(transcript) {
   } else if (score >= 50) {
     feedbackEl.textContent = `Good effort! Score: ${score}%. Try to fix the red words.`;
   } else {
-    feedbackEl.textContent = `Let's try again. Score: ${score}%. Focus on the first few words.`;
+    feedbackEl.textContent = `Score: ${score}%`;
   }
 
   saveProgress(score);

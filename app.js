@@ -2910,13 +2910,7 @@ function finalizeScore(transcript) {
   const feedbackEl = els.feedback;
   if (!feedbackEl) return;
 
-  if (score >= 80) {
-    feedbackEl.textContent = `Great! Score: ${score}%`;
-  } else if (score >= 50) {
-    feedbackEl.textContent = `Good effort! Score: ${score}%. Try to fix the red words.`;
-  } else {
-    feedbackEl.textContent = `Score: ${score}%`;
-  }
+  feedbackEl.textContent = '';
 
   saveProgress(score);
 }

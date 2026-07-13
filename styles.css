@@ -295,6 +295,7 @@ textarea {
 .word-correct {
   color: #0a7f2e;
   font-weight: 600;
+  animation: word-pop 0.22s ease-out;
 }
 
 .word-wrong {
@@ -304,6 +305,59 @@ textarea {
 
 .word-pending {
   color: #9ca3af;
+}
+
+/* The next word the learner should read while the mic is open */
+.word-next {
+  color: var(--text);
+  box-shadow: inset 0 -3px 0 0 var(--accent);
+}
+
+@keyframes word-pop {
+  0% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Green flash when the whole sentence has been read correctly */
+.sentence-complete {
+  animation: sentence-glow 1.4s ease;
+  border-radius: 12px;
+}
+
+@keyframes sentence-glow {
+  0% {
+    background: rgba(52, 211, 153, 0);
+  }
+  25% {
+    background: rgba(52, 211, 153, 0.18);
+  }
+  100% {
+    background: rgba(52, 211, 153, 0);
+  }
+}
+
+/* Pulsing state while the mic is open */
+#record-btn.recording {
+  opacity: 1;
+  color: var(--error);
+  border-color: rgba(248, 113, 113, 0.8);
+  animation: mic-pulse 1.6s ease-out infinite;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(248, 113, 113, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0);
+  }
 }
 
 .notes ul {

@@ -43,6 +43,13 @@ For production (an `https://` page cannot call a local `http://` server), deploy
 
 Note: the server uses the unofficial Edge Read Aloud endpoint (via `msedge-tts`). If Microsoft ever locks it down, the same voice names work on the official Azure Speech free tier (500K chars/month) — only the synthesis call in `server/server.js` needs swapping.
 
+## Adding and revising lessons
+
+Lesson content (sentences, translations, tokens) is not stored in this repo —
+it lives in a shared Google Sheet that the app fetches live as CSV. See
+[SCRIPTER_INSTRUCTIONS.md](SCRIPTER_INSTRUCTIONS.md) for the row schema and
+the full workflow for adding new lessons or revising existing ones.
+
 ## Guided reading (Read Along-style)
 
 While the mic is open, words light up live as they are read correctly and the next word to read is underlined. If the learner stumbles on a word, the app says "Try saying …" in the base language and then models the word slowly in the target voice (the mic is paused while the app speaks so it never transcribes itself). When the whole sentence is read correctly, the sentence flashes green, a short spoken praise plays, and the app automatically advances to the next sentence and reopens the mic so the learner can keep reading hands-free — or press Play first to listen.

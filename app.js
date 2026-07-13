@@ -791,42 +791,30 @@ function populateLessonSelect() {
 async function loadLessonManifest() {
   const lang = state.targetLang;
 
-  // If we have a CSV for this language, build lessons from it.
   const rows = await ensureMasterRowsForLang(lang);
-  if (rows && rows.length) {
-    const lessonMap = new Map();
-
-    rows.forEach((row) => {
-      if (!row.lesson_id) return;
-      if (!lessonMap.has(row.lesson_id)) {
-        // For now, use lesson_title as theme + label.
-        const title = row.lesson_title || row.lesson_id;
-        lessonMap.set(row.lesson_id, {
-          id: row.lesson_id,
-          lang,
-          label: title,
-          theme: title,
-        });
-      }
-    });
-
-    availableLessons = Array.from(lessonMap.values());
+  if (!rows || !rows.length) {
+    console.warn('No master sheet rows found for language', lang);
+    availableLessons = [];
     populateLessonSelect();
     return;
   }
 
-  // Fallback: old JSON manifest (for languages without a CSV yet)
-  try {
-    const res = await fetch('data/lessons.json');
-    if (!res.ok) throw new Error('No manifest');
-    const data = await res.json();
-    availableLessons = Array.isArray(data.lessons) ? data.lessons : [];
-    populateLessonSelect();
-  } catch (err) {
-    console.warn('Falling back to empty lesson list', err);
-    availableLessons = [];
-    populateLessonSelect();
-  }
+  const lessonMap = new Map();
+  rows.forEach((row) => {
+    if (!row.lesson_id) return;
+    if (!lessonMap.has(row.lesson_id)) {
+      const title = row.lesson_title || row.lesson_id;
+      lessonMap.set(row.lesson_id, {
+        id: row.lesson_id,
+        lang,
+        label: title,
+        theme: title,
+      });
+    }
+  });
+
+  availableLessons = Array.from(lessonMap.values());
+  populateLessonSelect();
 }
 
 function attachEventListeners() {

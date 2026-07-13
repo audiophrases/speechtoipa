@@ -137,6 +137,10 @@ let hasWarnedAboutArabicVoice = false;
 let lastLessonId = '';
 let recognitionRestartTimer = null;
 let nextSentenceTimer = null;
+let sentenceNavToken = 0;
+let lastCoachAt = 0;
+const coachedWordIndices = new Set();
+const COACH_COOLDOWN_MS = 4000;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -155,6 +159,7 @@ const state = {
   sentenceComplete: false,
   pendingAutoAdvance: false,
   shouldAutoRestartRecognition: false,
+  micPausedForTts: false,
   ttsLoading: false,
   approxLevelIndex: DEFAULT_CEFR_INDEX,
   audioUnlocked: false,
@@ -179,6 +184,19 @@ function markVoicesReady(voices) {
   });
 }
 
+function getVoiceNaturalness(voice) {
+  if (!voice) return 0;
+  const name = String(voice.name || '').toLowerCase();
+  // Edge exposes its neural voices as e.g. "Microsoft Aria Online (Natural)".
+  if (name.includes('natural') || name.includes('neural')) return 3;
+  // iOS/macOS premium and enhanced voices.
+  if (name.includes('premium') || name.includes('enhanced')) return 2;
+  // Chrome's remote Google voices sound much better than local SAPI/eSpeak ones.
+  if (name.includes('google') && !voice.localService) return 2;
+  if (name.includes('siri')) return 1;
+  return 0;
+}
+
 function rankVoicesForLang(voices, langCode) {
   if (!Array.isArray(voices)) return [];
   const normalizedLang = (langCode || '').toLowerCase();
@@ -195,6 +213,10 @@ function rankVoicesForLang(voices, langCode) {
     const aPrefix = Boolean(baseLang) && aLang.startsWith(baseLang);
     const bPrefix = Boolean(baseLang) && bLang.startsWith(baseLang);
     if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
+
+    const aQuality = getVoiceNaturalness(a);
+    const bQuality = getVoiceNaturalness(b);
+    if (aQuality !== bQuality) return bQuality - aQuality;
 
     const aLocal = Boolean(a.localService);
     const bLocal = Boolean(b.localService);
@@ -683,6 +705,7 @@ function normalizeVoiceList(voices, langCode) {
     lang: v.lang,
     deviceSupport: Boolean(v.localService),
     ready: readyVoiceKeys.has(getVoiceKey(v)),
+    natural: getVoiceNaturalness(v) >= 2,
   }));
 }
 
@@ -701,7 +724,7 @@ function populateVoiceSelect() {
   normalizedVoices.forEach((v) => {
     options.push({
       value: `${v.lang}|${v.name}`,
-      label: `${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''}${v.ready ? ', ready' : ''})`,
+      label: `${v.natural ? '✨ ' : ''}${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''}${v.ready ? ', ready' : ''})`,
     });
   });
 
@@ -1296,7 +1319,11 @@ function renderCurrentSentence() {
   const sentence = currentSentence();
   const sentenceEl = els.sentence;
 
+  sentenceNavToken += 1;
+  state.sentenceComplete = false;
+  coachedWordIndices.clear();
   hideTooltips();
+  sentenceEl.classList.remove('sentence-complete');
   sentenceEl.innerHTML = '';
   wordSpans = [];
 
@@ -1527,6 +1554,8 @@ function getLangCode(l2) {
       return 'en-US';
     case 'ca':
       return 'ca-ES';
+    case 'es':
+      return 'es-ES';
     case 'it':
       return 'it-IT';
     case 'ma':
@@ -1555,11 +1584,15 @@ function getVoiceForLang(langCode) {
   if (!voices || !voices.length) return null;
   markVoicesReady(voices);
 
-  const storedSelection = voiceSelections[state.targetLang];
-  if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
-    const [storedLang, storedName] = storedSelection.split('|');
-    const voice = voices.find((v) => v.lang === storedLang && v.name === storedName);
-    if (voice) return voice;
+  // Only apply the stored selection when speaking the target language;
+  // feedback phrases in the base language pick their own best voice.
+  if (langCode === getLangCode(state.targetLang)) {
+    const storedSelection = voiceSelections[state.targetLang];
+    if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
+      const [storedLang, storedName] = storedSelection.split('|');
+      const voice = voices.find((v) => v.lang === storedLang && v.name === storedName);
+      if (voice) return voice;
+    }
   }
 
   const ranked = rankVoicesForLang(voices, langCode);
@@ -1708,6 +1741,14 @@ function createPlaybackQueue() {
       state.supportsSpeechSynthesis = false;
       updateSpeechSynthesisState({ announce: true });
     }
+
+    if (typeof item.onDone === 'function') {
+      try {
+        item.onDone(success);
+      } catch (err) {
+        console.warn('TTS onDone callback failed', err);
+      }
+    }
   }
 
   async function processQueue() {
@@ -1735,9 +1776,10 @@ function createPlaybackQueue() {
   };
 }
 
-async function speakSentence(text, langCode, rate = 1.0) {
+async function speakSentence(text, langCode, rate = 1.0, { onDone } = {}) {
   if (!text) {
     setStatus('Nothing to play for this sentence.');
+    if (typeof onDone === 'function') onDone(false);
     return;
   }
 
@@ -1747,19 +1789,141 @@ async function speakSentence(text, langCode, rate = 1.0) {
 
   await playbackQueue.warmVoicesForLang(langCode);
   state.supportsTtsService = Boolean(getTtsBaseUrl());
-  playbackQueue.enqueue({ text, langCode, rate });
+  playbackQueue.enqueue({ text, langCode, rate, onDone });
   updatePlaybackWarnings();
 }
 
-function speakCurrent(rate = 1) {
-  if (!state.sentences.length) return;
+function speakCurrent(rate = 1, onDone) {
+  if (!state.sentences.length) {
+    if (typeof onDone === 'function') onDone(false);
+    return;
+  }
   const text = currentSentence().text;
-  speakSentence(text, getLangCode(state.targetLang), rate);
+  speakSentence(text, getLangCode(state.targetLang), rate, { onDone });
 }
 
 function speakWord(text, rate = 1) {
   if (!text) return;
-  speakSentence(text, getLangCode(state.targetLang), rate);
+  const wasPaused = pauseRecognitionForTts();
+  speakSentence(text, getLangCode(state.targetLang), rate, {
+    onDone: wasPaused ? () => resumeRecognitionAfterTts() : undefined,
+  });
+}
+
+const FEEDBACK_PHRASES = {
+  en: { tryWord: 'Try saying', praise: ['Well done!', 'Great reading!', 'Nice job!', 'Well read!'] },
+  fr: { tryWord: 'Essaie de dire', praise: ['Bravo !', 'Très bien lu !', 'Super !'] },
+  ca: { tryWord: 'Prova de dir', praise: ['Molt bé!', 'Ben llegit!', 'Fantàstic!'] },
+  es: { tryWord: 'Intenta decir', praise: ['¡Muy bien!', '¡Bien leído!', '¡Genial!'] },
+  it: { tryWord: 'Prova a dire', praise: ['Bravissimo!', 'Ben letto!', 'Ottimo!'] },
+  ma: { tryWord: 'حاول تقول', praise: ['مزيان بزاف', 'برافو عليك'] },
+};
+
+function getFeedbackPhrases() {
+  return FEEDBACK_PHRASES[state.baseLang] || FEEDBACK_PHRASES.en;
+}
+
+// Stop recognition while our own TTS speaks so the mic doesn't transcribe it.
+function pauseRecognitionForTts() {
+  if (!state.recognition || state.sentenceComplete) return false;
+  if (!state.recording && !state.shouldAutoRestartRecognition) return false;
+  state.micPausedForTts = true;
+  state.shouldAutoRestartRecognition = false;
+  clearRecognitionRestartTimer();
+  try {
+    state.recognition.stop();
+  } catch (err) {
+    /* already stopped */
+  }
+  updateRecordState();
+  return true;
+}
+
+function resumeRecognitionAfterTts() {
+  if (!state.micPausedForTts) return;
+  state.micPausedForTts = false;
+  if (state.manualStopRequested || state.sentenceComplete) return;
+  state.shouldAutoRestartRecognition = true;
+  restartRecognitionSession();
+}
+
+// Speak a sequence of feedback items (each { text, langCode, rate }) with the
+// mic paused, then resume listening and invoke onAllDone.
+function speakFeedbackItems(items, onAllDone) {
+  const list = (items || []).filter((item) => item && item.text);
+  if (!list.length) {
+    if (typeof onAllDone === 'function') onAllDone();
+    return;
+  }
+
+  const wasPaused = pauseRecognitionForTts();
+  list.forEach((item, idx) => {
+    const isLast = idx === list.length - 1;
+    playbackQueue.enqueue({
+      text: item.text,
+      langCode: item.langCode,
+      rate: item.rate || 1,
+      onDone: isLast
+        ? () => {
+            if (wasPaused) resumeRecognitionAfterTts();
+            if (typeof onAllDone === 'function') onAllDone();
+          }
+        : undefined,
+    });
+  });
+}
+
+// Read Along-style coaching: after a stumble, say “Try saying …” in the base
+// language, then model the word slowly in the target voice.
+function maybeCoachWrongWord(index) {
+  if (index < 0) return;
+  if (state.sentenceComplete || state.manualStopRequested) return;
+  if (coachedWordIndices.has(index)) return;
+  const now = Date.now();
+  if (now - lastCoachAt < COACH_COOLDOWN_MS) return;
+
+  const surface = (wordSpans[index]?.dataset?.word || '').trim();
+  if (!surface) return;
+
+  const phrases = getFeedbackPhrases();
+  coachedWordIndices.add(index);
+  lastCoachAt = now;
+
+  speakFeedbackItems([
+    { text: phrases.tryWord, langCode: getLangCode(state.baseLang), rate: 1 },
+    { text: surface, langCode: getLangCode(state.targetLang), rate: 0.8 },
+  ]);
+}
+
+function pickPraisePhrase() {
+  const { praise } = getFeedbackPhrases();
+  if (!Array.isArray(praise) || !praise.length) return '';
+  return praise[Math.floor(Math.random() * praise.length)];
+}
+
+// After a correct sentence: flash it green, speak praise, then move on and
+// reopen the mic so the learner can keep reading without touching anything.
+function celebrateSentenceComplete() {
+  const token = sentenceNavToken;
+
+  if (els.sentence) {
+    els.sentence.classList.remove('sentence-complete');
+    void els.sentence.offsetWidth;
+    els.sentence.classList.add('sentence-complete');
+  }
+
+  const praise = pickPraisePhrase();
+  speakFeedbackItems(
+    praise ? [{ text: praise, langCode: getLangCode(state.baseLang), rate: 1 }] : [],
+    () => {
+      setTimeout(() => {
+        if (token !== sentenceNavToken || !state.sentenceComplete) return;
+        state.sentenceComplete = false;
+        goToNext();
+        if (state.supportsRecognition) startRecording();
+      }, 400);
+    }
+  );
 }
 
 function getBestVoiceSync(langCode) {
@@ -1769,24 +1933,19 @@ function getBestVoiceSync(langCode) {
   const voices = synth.getVoices();
   if (!voices || !voices.length) return null;
 
-  const target = String(langCode || '').toLowerCase();
-  const priorities = CURATED_VOICE_PRIORITIES[(target.split('-')[0] || target)] || [];
-
-  // Prefer curated priorities first.
-  for (const pref of priorities) {
-    const match = voices.find((v) => String(v.lang || '').toLowerCase() === String(pref).toLowerCase());
-    if (match) return match;
+  // Honor an explicit user selection first.
+  const storedSelection = voiceSelections[state.targetLang];
+  if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
+    const [storedLang, storedName] = storedSelection.split('|');
+    const stored = voices.find((v) => v.lang === storedLang && v.name === storedName);
+    if (stored) return stored;
   }
 
-  // Then any voice that matches language prefix.
-  const prefix = target.split('-')[0];
-  const byPrefix = voices.find((v) => String(v.lang || '').toLowerCase().startsWith(prefix));
-  if (byPrefix) return byPrefix;
-
-  return voices[0] || null;
+  const ranked = rankVoicesForLang(voices, langCode);
+  return ranked[0] || null;
 }
 
-function speakCurrentImmediate(rate = 1) {
+function speakCurrentImmediate(rate = 1, onDone) {
   if (!state.sentences.length) return false;
   const text = currentSentence().text;
   const langCode = getLangCode(state.targetLang);
@@ -1807,9 +1966,12 @@ function speakCurrentImmediate(rate = 1) {
   const voice = getBestVoiceSync(langCode);
   if (voice) utterance.voice = voice;
 
+  utterance.onend = () => {
+    if (typeof onDone === 'function') onDone(true);
+  };
   utterance.onerror = () => {
     // Fall back to the existing async pipeline (service TTS if needed).
-    speakCurrent(rate);
+    speakCurrent(rate, onDone);
   };
 
   synth.speak(utterance);
@@ -1825,6 +1987,9 @@ async function handlePlaybackClick(rate) {
     }
   }
 
+  const wasPaused = pauseRecognitionForTts();
+  const onDone = wasPaused ? () => resumeRecognitionAfterTts() : undefined;
+
   // On mobile, try a synchronous speechSynthesis play first.
   if (isMobileDevice()) {
     // Try to force voices to load.
@@ -1832,11 +1997,11 @@ async function handlePlaybackClick(rate) {
       if (window.speechSynthesis) window.speechSynthesis.getVoices();
     } catch (_) {}
 
-    const started = speakCurrentImmediate(rate);
+    const started = speakCurrentImmediate(rate, onDone);
     if (started) return;
   }
 
-  speakCurrent(rate);
+  speakCurrent(rate, onDone);
 }
 
 async function togglePlayback() {
@@ -1933,8 +2098,10 @@ function initRecognition() {
     finalTranscript = '';
 
     state.recording = true;
+    state.micPausedForTts = false;
     setStatus('Listening...');
     updateRecordState();
+    updateWordSpanClasses();
   };
 
   state.recognition.onerror = (event) => {
@@ -1959,6 +2126,7 @@ function initRecognition() {
   state.recognition.onend = () => {
     state.recording = false;
     updateRecordState();
+    updateWordSpanClasses();
 
     const shouldFinalize = state.manualStopRequested || state.sentenceComplete;
     if (shouldFinalize && lastTranscript !== null) {
@@ -1990,6 +2158,9 @@ function startRecording() {
     state.sentenceComplete = false;
     state.pendingAutoAdvance = false;
     state.shouldAutoRestartRecognition = true;
+    state.micPausedForTts = false;
+    coachedWordIndices.clear();
+    lastCoachAt = 0;
     clearRecognitionRestartTimer();
     state.recognition.lang = getLangCode(state.targetLang);
     state.recognition.start();
@@ -2000,18 +2171,38 @@ function startRecording() {
 }
 
 function stopRecording() {
-  if (state.recording && state.recognition) {
-    state.manualStopRequested = true;
-    state.shouldAutoRestartRecognition = false;
-    clearRecognitionRestartTimer();
-    setStatus('Stopping...');
+  if (!state.recognition) return;
+  const sessionActive =
+    state.recording || state.micPausedForTts || state.shouldAutoRestartRecognition;
+  if (!sessionActive) return;
+
+  state.manualStopRequested = true;
+  state.shouldAutoRestartRecognition = false;
+  state.micPausedForTts = false;
+  clearRecognitionRestartTimer();
+  setStatus('Stopping...');
+  try {
     state.recognition.stop();
+  } catch (err) {
+    /* already stopped */
+  }
+
+  // If recognition was already stopped (paused for TTS or between auto-restarts),
+  // onend won't fire again, so finalize here.
+  if (!state.recording && lastTranscript !== null) {
+    finalizeScore(lastTranscript);
+    setStatus('Stopped.');
+    updateRecordState();
+    updateWordSpanClasses();
   }
 }
 
 function updateRecordState() {
-  els.record.disabled = !state.supportsRecognition || state.recording;
-  els.stop.disabled = !state.recording;
+  const listening = state.recording || state.micPausedForTts;
+  els.record.disabled = !state.supportsRecognition || listening;
+  els.stop.disabled = !listening;
+  els.record.classList.toggle('recording', listening);
+  els.record.textContent = listening ? '🎙️ Listening…' : '🎙️ Record';
   if (!state.supportsRecognition) {
     els.status.textContent = 'Speech recognition not available in this browser.';
   }
@@ -2447,19 +2638,19 @@ function buildMaxConsecutiveRuns(tokens) {
   return maxRuns;
 }
 
-function collapseConsecutiveDuplicates(tokens, maxRun = 1) {
+function collapseConsecutiveDuplicates(tokens, maxRunsByToken, defaultMaxRun = 1) {
   const out = [];
   let prev = null;
   let run = 0;
   for (const t of tokens) {
     if (t === prev) {
       run += 1;
-      if (run <= maxRun) out.push(t);
     } else {
       prev = t;
       run = 1;
-      out.push(t);
     }
+    const maxRun = Math.max(maxRunsByToken?.get(t) || 0, defaultMaxRun);
+    if (run <= maxRun) out.push(t);
   }
   return out;
 }
@@ -2484,7 +2675,7 @@ function filterUnexpectedRepeats(transcript, targetTokensForSentence, langCode) 
   const uiSpokenTokens =
     (langCode || state.targetLang) === 'ma' && spokenTokens.length === 1
       ? [spokenTokens[0]]
-      : collapseConsecutiveDuplicates(spokenTokens, 1);
+      : collapseConsecutiveDuplicates(spokenTokens, allowedRuns, 1);
 
   uiSpokenTokens.forEach((token) => {
     if (token === prev) {
@@ -2717,12 +2908,19 @@ function resetSentenceState() {
 }
 
 function updateWordSpanClasses() {
+  const listening = state.recording || state.micPausedForTts;
+  let nextIndex = -1;
+  if (listening && !state.sentenceComplete) {
+    nextIndex = wordStatus.findIndex((s) => s !== 'correct');
+  }
+
   wordSpans.forEach((span, i) => {
-    span.classList.remove('word-correct', 'word-wrong', 'word-pending');
+    span.classList.remove('word-correct', 'word-wrong', 'word-pending', 'word-next');
     const status = wordStatus[i] || 'pending';
     if (status === 'correct') span.classList.add('word-correct');
     else if (status === 'wrong') span.classList.add('word-wrong');
     else span.classList.add('word-pending');
+    if (i === nextIndex) span.classList.add('word-next');
   });
 }
 
@@ -2736,17 +2934,15 @@ function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
     state.pendingAutoAdvance = false;
     state.shouldAutoRestartRecognition = false;
     state.manualStopRequested = false;
+    state.micPausedForTts = false;
     clearRecognitionRestartTimer();
     try {
       state.recognition.stop();
     } catch (e) {
       // ignore
     }
-    const feedbackEl = document.getElementById('feedback');
-    if (feedbackEl) {
-      feedbackEl.textContent = 'Perfecte! 👏 Has pronunciat tota la frase correctament.';
-    }
-    setStatus('Recording stopped – sentence complete ✅');
+    setStatus('Sentence complete ✅');
+    celebrateSentenceComplete();
   }
 }
 
@@ -2840,6 +3036,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
   }
 
+  let stumbledIndex = -1;
   if (isFinalResult) {
     let firstNotCorrect = -1;
     for (let i = lockedPrefix; i < n; i++) {
@@ -2850,6 +3047,10 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
     if (firstNotCorrect !== -1) {
       wordStatus[firstNotCorrect] = 'wrong';
+      // Only coach when the learner actually attempted something.
+      if (filteredTokens.length) {
+        stumbledIndex = firstNotCorrect;
+      }
     }
   }
 
@@ -2890,6 +3091,10 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   }
 
   checkIfSentenceCompleteAndStop({ allowAutoStop: true });
+
+  if (!state.sentenceComplete && stumbledIndex !== -1) {
+    maybeCoachWrongWord(stumbledIndex);
+  }
 }
 
 function finalizeScore(transcript) {
@@ -2924,5 +3129,7 @@ if (typeof module !== 'undefined' && module.exports) {
     tokenizeText,
     buildMaxConsecutiveRuns,
     filterUnexpectedRepeats,
+    rankVoicesForLang,
+    getVoiceNaturalness,
   };
 }

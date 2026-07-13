@@ -139,8 +139,14 @@ let recognitionRestartTimer = null;
 let nextSentenceTimer = null;
 let sentenceNavToken = 0;
 let lastCoachAt = 0;
+let pendingCoachTimer = null;
+let pendingCoachIndex = -1;
 const coachedWordIndices = new Set();
-const COACH_COOLDOWN_MS = 4000;
+// Wait for this much silence after a stumble before coaching, so we never
+// talk over a learner who is still reading. Any new recognition activity
+// (including interim results) cancels the pending coach.
+const COACH_SILENCE_MS = 2200;
+const COACH_COOLDOWN_MS = 8000;
 const state = {
   targetLang: 'fr',
   baseLang: 'en',
@@ -1322,6 +1328,7 @@ function renderCurrentSentence() {
   sentenceNavToken += 1;
   state.sentenceComplete = false;
   coachedWordIndices.clear();
+  clearPendingCoach();
   hideTooltips();
   sentenceEl.classList.remove('sentence-complete');
   sentenceEl.innerHTML = '';
@@ -1827,6 +1834,7 @@ function getFeedbackPhrases() {
 function pauseRecognitionForTts() {
   if (!state.recognition || state.sentenceComplete) return false;
   if (!state.recording && !state.shouldAutoRestartRecognition) return false;
+  clearPendingCoach();
   state.micPausedForTts = true;
   state.shouldAutoRestartRecognition = false;
   clearRecognitionRestartTimer();
@@ -1873,8 +1881,41 @@ function speakFeedbackItems(items, onAllDone) {
   });
 }
 
-// Read Along-style coaching: after a stumble, say “Try saying …” in the base
-// language, then model the word slowly in the target voice.
+function clearPendingCoach() {
+  if (pendingCoachTimer) {
+    clearTimeout(pendingCoachTimer);
+    pendingCoachTimer = null;
+  }
+  pendingCoachIndex = -1;
+}
+
+// Read Along-style coaching, but only when the learner is actually stuck:
+// arm a timer on a stumble and let any further speech cancel it, so coaching
+// only fires after COACH_SILENCE_MS of quiet — never mid-sentence.
+function scheduleCoachAfterSilence(index) {
+  clearPendingCoach();
+  if (index < 0) return;
+  if (coachedWordIndices.has(index)) return;
+
+  pendingCoachIndex = index;
+  pendingCoachTimer = setTimeout(() => {
+    const idx = pendingCoachIndex;
+    clearPendingCoach();
+
+    const sessionActive =
+      state.recording || state.shouldAutoRestartRecognition || state.micPausedForTts;
+    if (!sessionActive || state.sentenceComplete || state.manualStopRequested) return;
+
+    // Only coach if the learner is still stuck on this exact word.
+    const firstNotCorrect = wordStatus.findIndex((s) => s !== 'correct');
+    if (idx !== firstNotCorrect) return;
+
+    maybeCoachWrongWord(idx);
+  }, COACH_SILENCE_MS);
+}
+
+// Say “Try saying …” in the base language, then model the word slowly in the
+// target voice.
 function maybeCoachWrongWord(index) {
   if (index < 0) return;
   if (state.sentenceComplete || state.manualStopRequested) return;
@@ -2161,6 +2202,7 @@ function startRecording() {
     state.micPausedForTts = false;
     coachedWordIndices.clear();
     lastCoachAt = 0;
+    clearPendingCoach();
     clearRecognitionRestartTimer();
     state.recognition.lang = getLangCode(state.targetLang);
     state.recognition.start();
@@ -2179,6 +2221,7 @@ function stopRecording() {
   state.manualStopRequested = true;
   state.shouldAutoRestartRecognition = false;
   state.micPausedForTts = false;
+  clearPendingCoach();
   clearRecognitionRestartTimer();
   setStatus('Stopping...');
   try {
@@ -2935,6 +2978,7 @@ function checkIfSentenceCompleteAndStop({ allowAutoStop = false } = {}) {
     state.shouldAutoRestartRecognition = false;
     state.manualStopRequested = false;
     state.micPausedForTts = false;
+    clearPendingCoach();
     clearRecognitionRestartTimer();
     try {
       state.recognition.stop();
@@ -2995,6 +3039,10 @@ function buildDarijaSpokenTokens(transcript, sentence) {
 }
 
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
+  // Fresh speech activity: the learner is still reading, so cancel any
+  // coaching that was waiting for silence.
+  clearPendingCoach();
+
   const sentence = currentSentence();
 
   // For Darija, score against ma_latn token backbone.
@@ -3093,7 +3141,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   checkIfSentenceCompleteAndStop({ allowAutoStop: true });
 
   if (!state.sentenceComplete && stumbledIndex !== -1) {
-    maybeCoachWrongWord(stumbledIndex);
+    scheduleCoachAfterSilence(stumbledIndex);
   }
 }
 

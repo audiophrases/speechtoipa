@@ -10,7 +10,7 @@ Requires [Node.js](https://nodejs.org). Alternatively run `cd server && npm star
 
 ## Voices and natural TTS
 
-The best voice quality comes from the bundled **neural TTS server** (see below). Without it, the app uses the browser's built-in speech synthesis and automatically ranks the most natural-sounding voices first: Edge's neural voices ("… Online (Natural)"), iOS/macOS "Premium"/"Enhanced" voices, and Chrome's remote Google voices all outrank plain local voices. Natural voices are marked with ✨ in the voice picker.
+The best voice quality comes from the bundled **neural TTS server** (see below). Without it, the app uses the browser's built-in speech synthesis and automatically picks the most natural-sounding voice available: Edge's neural voices ("… Online (Natural)"), iOS/macOS "Premium"/"Enhanced" voices, and Chrome's remote Google voices all outrank plain local voices. Voice selection is fully automatic.
 
 ## Neural TTS server (recommended)
 

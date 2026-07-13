@@ -19,7 +19,6 @@ const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 const CUSTOM_LESSON_ID = 'custom';
-const VOICE_STORAGE_KEY = 'speechtoipa-voices';
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
 const DEFAULT_MATCH_THRESHOLD = 0.7;
@@ -51,7 +50,6 @@ const NO_TTS_SUPPORT_MESSAGE =
 const TTS_CACHE_PREFIX = 'speechtoipa-tts:';
 const TTS_LOCAL_CACHE_CHAR_LIMIT = 180;
 const ttsAudioCache = new Map();
-const AUTO_VOICE_VALUE = 'auto';
 const SILENT_AUDIO_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
 const CURATED_VOICE_PRIORITIES = {
   ar: ['ar-MA', 'ar-SA', 'ar-EG', 'ar'],
@@ -189,8 +187,6 @@ const state = {
 };
 
 const els = {};
-let normalizedVoices = [];
-let voiceSelections = {};
 const readyVoiceKeys = new Set();
 
 function getVoiceKey(voice) {
@@ -619,7 +615,6 @@ if (typeof document !== 'undefined') {
 
 function cacheElements() {
   els.targetSelect = document.getElementById('target-lang');
-  els.voiceSelect = document.getElementById('voice-select');
   els.baseSelect = document.getElementById('base-lang');
   els.lessonSelect = document.getElementById('lesson-select');
   els.approxSlider = document.getElementById('approx-slider');
@@ -665,7 +660,6 @@ function createTooltips() {
 function hydrateSelections() {
   populateSelect(els.targetSelect, TARGET_LANGS, state.targetLang);
   populateSelect(els.baseSelect, BASE_LANGS, state.baseLang);
-  populateVoiceSelect();
 }
 
 function populateSelect(select, options, selected) {
@@ -731,65 +725,6 @@ function setApproxLevel(index, { persist = true } = {}) {
   if (persist) {
     persistApproxSettings();
   }
-}
-
-function getStoredVoices() {
-  try {
-    const raw = localStorage.getItem(VOICE_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistVoices() {
-  try {
-    localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceSelections));
-  } catch {
-    /* ignore */
-  }
-}
-
-function normalizeVoiceList(voices, langCode) {
-  const rankedVoices = rankVoicesForLang(voices, langCode);
-  return rankedVoices.map((v) => ({
-    name: v.name,
-    lang: v.lang,
-    deviceSupport: Boolean(v.localService),
-    ready: readyVoiceKeys.has(getVoiceKey(v)),
-    natural: getVoiceNaturalness(v) >= 2,
-  }));
-}
-
-function populateVoiceSelect() {
-  if (!els.voiceSelect) return;
-
-  if (window.speechSynthesis) {
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length) {
-      markVoicesReady(voices);
-      normalizedVoices = normalizeVoiceList(voices, getLangCode(state.targetLang));
-    }
-  }
-
-  const options = [{ value: AUTO_VOICE_VALUE, label: 'Auto (recommended)' }];
-  normalizedVoices.forEach((v) => {
-    options.push({
-      value: `${v.lang}|${v.name}`,
-      label: `${v.natural ? '✨ ' : ''}${v.name} (${v.lang}${v.deviceSupport ? ', device' : ''}${v.ready ? ', ready' : ''})`,
-    });
-  });
-
-  els.voiceSelect.innerHTML = '';
-  options.forEach((opt) => {
-    const option = document.createElement('option');
-    option.value = opt.value;
-    option.textContent = opt.label;
-    els.voiceSelect.appendChild(option);
-  });
-
-  const stored = voiceSelections[state.targetLang] || AUTO_VOICE_VALUE;
-  els.voiceSelect.value = stored;
 }
 
 function getLessonsForLang(lang) {
@@ -897,7 +832,6 @@ async function loadLessonManifest() {
 function attachEventListeners() {
   els.targetSelect.addEventListener('change', async () => {
     state.targetLang = els.targetSelect.value;
-    populateVoiceSelect();
     await loadLessonManifest();
     updateLessonId();
     saveProgress();
@@ -999,12 +933,6 @@ function attachEventListeners() {
     }
   });
 
-  els.voiceSelect?.addEventListener('change', () => {
-    voiceSelections[state.targetLang] = els.voiceSelect.value;
-    playbackQueue.resetWarmup(getLangCode(state.targetLang));
-    persistVoices();
-    updatePlaybackWarnings();
-  });
 }
 
 function handleLessonSelection(selection) {
@@ -1081,9 +1009,6 @@ function hydrateFromStorage() {
     state.approxLevelIndex = DEFAULT_CEFR_INDEX;
   }
   setApproxLevel(state.approxLevelIndex, { persist: false });
-
-  voiceSelections = getStoredVoices();
-  populateVoiceSelect();
 }
 
 function normalizeLegacyCodes(saved) {
@@ -1263,15 +1188,10 @@ function loadProgressForLesson() {
 }
 
 function buildVoiceMap() {
-  if (!window.speechSynthesis) {
-    normalizedVoices = [];
-    return;
-  }
+  if (!window.speechSynthesis) return;
 
   const voices = window.speechSynthesis.getVoices();
   markVoicesReady(voices);
-  normalizedVoices = normalizeVoiceList(voices, getLangCode(state.targetLang));
-  populateVoiceSelect();
   updatePlaybackWarnings();
 }
 
@@ -1636,17 +1556,6 @@ function getVoiceForLang(langCode) {
   const voices = window.speechSynthesis.getVoices();
   if (!voices || !voices.length) return null;
   markVoicesReady(voices);
-
-  // Only apply the stored selection when speaking the target language;
-  // feedback phrases in the base language pick their own best voice.
-  if (langCode === getLangCode(state.targetLang)) {
-    const storedSelection = voiceSelections[state.targetLang];
-    if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
-      const [storedLang, storedName] = storedSelection.split('|');
-      const voice = voices.find((v) => v.lang === storedLang && v.name === storedName);
-      if (voice) return voice;
-    }
-  }
 
   const ranked = rankVoicesForLang(voices, langCode);
   return ranked[0] || null;
@@ -2024,14 +1933,6 @@ function getBestVoiceSync(langCode) {
   if (!synth) return null;
   const voices = synth.getVoices();
   if (!voices || !voices.length) return null;
-
-  // Honor an explicit user selection first.
-  const storedSelection = voiceSelections[state.targetLang];
-  if (storedSelection && storedSelection !== AUTO_VOICE_VALUE) {
-    const [storedLang, storedName] = storedSelection.split('|');
-    const stored = voices.find((v) => v.lang === storedLang && v.name === storedName);
-    if (stored) return stored;
-  }
 
   const ranked = rankVoicesForLang(voices, langCode);
   return ranked[0] || null;

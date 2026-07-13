@@ -85,6 +85,14 @@ function isGoogleTranslateTts(baseUrl) {
   return /translate\.googleapis\.com/i.test(baseUrl || '');
 }
 
+// A dedicated TTS server (e.g. the neural server in server/) beats browser
+// voices, which vary wildly across browsers and platforms. The Google
+// Translate endpoint is only a last-resort fallback, so it never wins.
+function shouldPreferTtsService() {
+  const baseUrl = getTtsBaseUrl();
+  return Boolean(baseUrl) && !isGoogleTranslateTts(baseUrl);
+}
+
 function buildTtsRequestUrl(baseUrl, text, langCode) {
   const sanitizedBase = (baseUrl || '').replace(/\/$/, '');
   if (isGoogleTranslateTts(sanitizedBase)) {
@@ -102,7 +110,15 @@ function buildTtsRequestUrl(baseUrl, text, langCode) {
 }
 
 function getTtsCacheKey(text, lang) {
-  return `${TTS_CACHE_PREFIX}${lang}:${text}`;
+  // Include the source host so switching TTS services never replays audio
+  // that was cached from a different (lower-quality) service.
+  let host = 'default';
+  try {
+    host = new URL(getTtsBaseUrl()).host || 'default';
+  } catch {
+    /* keep default */
+  }
+  return `${TTS_CACHE_PREFIX}${host}:${lang}:${text}`;
 }
 
 function isMobileDevice() {
@@ -555,10 +571,40 @@ async function ensureMasterRowsForLang(lang) {
   return rows;
 }
 
+const LOCAL_TTS_SERVER_URL = 'http://127.0.0.1:8787';
+
+// If the neural TTS server (server/) is running locally, use it automatically.
+// Only possible from http:/file: pages — https pages cannot call a local http
+// server, so production deployments set the meta tts-base-url tag instead.
+async function detectLocalTtsServer() {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+  if (window.TTS_BASE_URL || window.__TTS_BASE_URL__) return;
+  const proto = window.location?.protocol;
+  if (proto !== 'http:' && proto !== 'file:') return;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`${LOCAL_TTS_SERVER_URL}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !data.ok) return;
+
+    window.TTS_BASE_URL = LOCAL_TTS_SERVER_URL;
+    state.supportsTtsService = true;
+    updateSpeechSynthesisState();
+    console.log('Neural TTS server detected at', LOCAL_TTS_SERVER_URL);
+  } catch {
+    /* no local server running — keep defaults */
+  }
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', async () => {
     cacheElements();
     createTooltips();
+    detectLocalTtsServer();
     updateSpeechSynthesisState();
     hydrateSelections();
     attachEventListeners();
@@ -1725,11 +1771,16 @@ function createPlaybackQueue() {
   async function handleItem(item) {
     const synthSupported = isSpeechSynthesisSupported();
     const ttsAvailable = Boolean(getTtsBaseUrl());
+    const preferService = ttsAvailable && shouldPreferTtsService();
     let success = false;
 
     state.supportsTtsService = ttsAvailable;
 
-    if (synthSupported) {
+    if (preferService) {
+      success = await speakWithService(item);
+    }
+
+    if (!success && synthSupported) {
       const voiceResult = await speakWithVoice(item);
       success = voiceResult.success;
 
@@ -1740,7 +1791,7 @@ function createPlaybackQueue() {
       }
     }
 
-    if (!success && ttsAvailable) {
+    if (!success && ttsAvailable && !preferService) {
       success = await speakWithService(item);
     }
 
@@ -2031,8 +2082,9 @@ async function handlePlaybackClick(rate) {
   const wasPaused = pauseRecognitionForTts();
   const onDone = wasPaused ? () => resumeRecognitionAfterTts() : undefined;
 
-  // On mobile, try a synchronous speechSynthesis play first.
-  if (isMobileDevice()) {
+  // On mobile, try a synchronous speechSynthesis play first — unless a neural
+  // TTS server is configured, which beats any local browser voice.
+  if (isMobileDevice() && !shouldPreferTtsService()) {
     // Try to force voices to load.
     try {
       if (window.speechSynthesis) window.speechSynthesis.getVoices();

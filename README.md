@@ -8,7 +8,38 @@ Open `index.html` in a modern browser or serve the folder with any static file s
 
 ## Voices and natural TTS
 
-The app first prefers the browser's built-in speech synthesis and automatically ranks the most natural-sounding voices first: Edge's neural voices ("… Online (Natural)"), iOS/macOS "Premium"/"Enhanced" voices, and Chrome's remote Google voices all outrank plain local voices. Natural voices are marked with ✨ in the voice picker. For the best free voice quality, open the app in Microsoft Edge, whose neural voices are exposed through the standard Web Speech API.
+The best voice quality comes from the bundled **neural TTS server** (see below). Without it, the app uses the browser's built-in speech synthesis and automatically ranks the most natural-sounding voices first: Edge's neural voices ("… Online (Natural)"), iOS/macOS "Premium"/"Enhanced" voices, and Chrome's remote Google voices all outrank plain local voices. Natural voices are marked with ✨ in the voice picker.
+
+## Neural TTS server (recommended)
+
+Browser voices are inconsistent across platforms — no browser ships Moroccan Arabic, and Catalan support is spotty. The `server/` directory contains a small Node server that streams Microsoft Edge neural voices (the same voices as Azure Speech) with no account or API key:
+
+| Language | Voice |
+| --- | --- |
+| English (US) | `en-US-JennyNeural` |
+| Moroccan Arabic (Darija) | `ar-MA-MounaNeural` |
+| Catalan | `ca-ES-JoanaNeural` |
+| French | `fr-FR-DeniseNeural` |
+| Italian | `it-IT-IsabellaNeural` |
+| Spanish | `es-ES-ElviraNeural` |
+
+Run it locally:
+
+```bash
+cd server
+npm install
+npm start   # listens on http://127.0.0.1:8787
+```
+
+When the app is opened over `http://` or `file://`, it probes `http://127.0.0.1:8787/health` and automatically prefers the server over browser voices when found. Synthesized clips are cached on disk (`server/cache/`) and in the browser, so repeated sentences play instantly.
+
+For production (an `https://` page cannot call a local `http://` server), deploy `server/` to any Node host (Render, Railway, Fly, a VPS…) and point the app at it with the meta tag:
+
+```html
+<meta name="tts-base-url" content="https://your-tts-server.example.com">
+```
+
+Note: the server uses the unofficial Edge Read Aloud endpoint (via `msedge-tts`). If Microsoft ever locks it down, the same voice names work on the official Azure Speech free tier (500K chars/month) — only the synthesis call in `server/server.js` needs swapping.
 
 ## Guided reading (Read Along-style)
 

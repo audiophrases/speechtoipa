@@ -1,0 +1,14 @@
+{
+  "name": "speechtoipa-tts-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Neural TTS server for the speechtoipa app, using Microsoft Edge Read Aloud neural voices",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "msedge-tts": "^2.0.7"
+  }
+}

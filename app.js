@@ -1427,7 +1427,7 @@ function renderCurrentSentence() {
 
   const total = state.sentences.length;
   els.status.textContent =
-    state.mode === 'custom'
+    state.mode === 'custom' && total <= 1
       ? 'Custom sentence practice'
       : `Sentence ${state.currentIndex + 1} / ${total}`;
 }
@@ -1451,6 +1451,33 @@ function goToNext() {
   saveProgress();
 }
 
+// Sentence-ending punctuation, including Arabic '؟' and ellipsis '…', for
+// Darija custom text. Splits each line into one or more sentences so pasted
+// paragraphs (or one-sentence-per-line lists) both work.
+const SENTENCE_SPLIT_RE = /[^.!?؟…]+(?:[.!?؟…]+)?/g;
+
+function splitIntoSentences(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const sentences = [];
+  lines.forEach((line) => {
+    const normalized = line.replace(/\s+/g, ' ').trim();
+    if (!normalized) return;
+    const pieces = normalized.match(SENTENCE_SPLIT_RE) || [normalized];
+    pieces.forEach((piece) => {
+      const trimmed = piece.trim();
+      if (trimmed) sentences.push(trimmed);
+    });
+  });
+
+  if (sentences.length) return sentences;
+  const fallback = String(text || '').trim();
+  return fallback ? [fallback] : [];
+}
+
 function enterCustomMode(text) {
   if (!text) return;
 
@@ -1462,27 +1489,26 @@ function enterCustomMode(text) {
     };
   }
 
+  const sentenceTexts = splitIntoSentences(text);
+
   state.customSentence = text;
   state.mode = 'custom';
   state.lessonId = CUSTOM_LESSON_ID;
   state.currentIndex = 0;
-  state.sentences = [
-    {
-      id: 'custom',
-      unit: null,
-      theme: 'Custom practice',
-      title: 'Custom practice',
-      sentenceNumber: 1,
-      text,
-      translations: { [state.baseLang]: text },
-      tokens: [],
-    },
-  ];
+  state.sentences = sentenceTexts.map((sentenceText, index) => ({
+    id: `custom_${index + 1}`,
+    unit: null,
+    theme: 'Custom practice',
+    title: 'Custom practice',
+    sentenceNumber: index + 1,
+    text: sentenceText,
+    translations: { [state.baseLang]: sentenceText },
+    tokens: [],
+  }));
 
   els.lessonSelect.value = CUSTOM_LESSON_ID;
   closeCustomModal();
   renderCurrentSentence();
-  setStatus('Practicing your custom sentence.');
 }
 
 function exitCustomMode() {
@@ -3120,5 +3146,6 @@ if (typeof module !== 'undefined' && module.exports) {
     filterUnexpectedRepeats,
     rankVoicesForLang,
     getVoiceNaturalness,
+    splitIntoSentences,
   };
 }

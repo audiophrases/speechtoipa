@@ -6,6 +6,7 @@ const {
   tokenizeText,
   rankVoicesForLang,
   getVoiceNaturalness,
+  splitIntoSentences,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -96,6 +97,38 @@ test('scores neural and premium voices above plain ones', () => {
     getVoiceNaturalness({ name: 'Microsoft David - English (United States)', localService: true }),
     0
   );
+});
+
+test('splits a pasted paragraph into individual sentences', () => {
+  const text = 'Hi, my name is Marc. I am from Spain! Do you like pizza?';
+  assert.deepStrictEqual(splitIntoSentences(text), [
+    'Hi, my name is Marc.',
+    'I am from Spain!',
+    'Do you like pizza?',
+  ]);
+});
+
+test('splits one-sentence-per-line custom text even without punctuation', () => {
+  const text = 'Hello there\nHow are you\nGoodbye';
+  assert.deepStrictEqual(splitIntoSentences(text), [
+    'Hello there',
+    'How are you',
+    'Goodbye',
+  ]);
+});
+
+test('splits Darija custom text on Arabic sentence punctuation', () => {
+  const text = 'سلام. كيف حالك؟';
+  assert.deepStrictEqual(splitIntoSentences(text), ['سلام.', 'كيف حالك؟']);
+});
+
+test('falls back to the whole trimmed text when nothing splits it', () => {
+  assert.deepStrictEqual(splitIntoSentences('   just one phrase   '), ['just one phrase']);
+});
+
+test('returns an empty list for blank custom text', () => {
+  assert.deepStrictEqual(splitIntoSentences(''), []);
+  assert.deepStrictEqual(splitIntoSentences('   \n  '), []);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

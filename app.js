@@ -145,7 +145,7 @@ const coachedWordIndices = new Set();
 // Wait for this much silence after a stumble before coaching, so we never
 // talk over a learner who is still reading. Any new recognition activity
 // (including interim results) cancels the pending coach.
-const COACH_SILENCE_MS = 2200;
+const COACH_SILENCE_MS = 3300;
 const COACH_COOLDOWN_MS = 8000;
 const state = {
   targetLang: 'fr',

@@ -7,7 +7,25 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_TEXT_LENGTH = 500;
-const CACHE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cache');
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const CACHE_DIR = path.join(SERVER_DIR, 'cache');
+// The server also serves the app itself, so `speechtoipa.bat` (or `npm start`)
+// is all that's needed to run everything at one URL.
+const APP_ROOT = path.join(SERVER_DIR, '..');
+
+const STATIC_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.md': 'text/plain; charset=utf-8',
+};
 
 // One neural voice per app language, keyed by the primary language subtag the
 // client sends (e.g. "en-US" -> "en", "ar-SA" -> "ar"). The app's only Arabic
@@ -60,6 +78,43 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function serveStatic(pathname, res) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    sendJson(res, 400, { error: 'Bad request' });
+    return;
+  }
+  if (decoded === '/') decoded = '/index.html';
+
+  const filePath = path.normalize(path.join(APP_ROOT, decoded));
+  const insideRoot = filePath.startsWith(APP_ROOT + path.sep) || filePath === path.join(APP_ROOT, 'index.html');
+  if (!insideRoot) {
+    sendJson(res, 403, { error: 'Forbidden' });
+    return;
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    sendJson(res, 404, { error: 'Not found' });
+    return;
+  }
+  if (!stat.isFile()) {
+    sendJson(res, 404, { error: 'Not found' });
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  res.writeHead(200, {
+    'Content-Type': STATIC_MIME[ext] || 'application/octet-stream',
+    'Cache-Control': 'no-cache',
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
 const server = http.createServer(async (req, res) => {
   sendCors(res);
 
@@ -82,7 +137,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname !== '/tts') {
-    sendJson(res, 404, { error: 'Not found. Use /tts?text=...&lang=...' });
+    serveStatic(url.pathname, res);
     return;
   }
 
@@ -125,6 +180,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`speechtoipa TTS server listening on http://127.0.0.1:${PORT}`);
-  console.log('Voices:', VOICES);
+  console.log(`speechtoipa running at http://127.0.0.1:${PORT}`);
+  console.log('Neural voices:', VOICES);
 });

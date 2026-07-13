@@ -4,7 +4,9 @@ A lightweight web app for practicing reading, listening, and pronunciation.
 
 ## Running locally
 
-Open `index.html` in a modern browser or serve the folder with any static file server (e.g. `python -m http.server 8000`).
+**Windows (easiest):** double-click `speechtoipa.bat`. It installs dependencies on first run, starts the app together with the neural voice server, and opens your browser at `http://127.0.0.1:8787`. Keep the console window open while using the app; close it to stop.
+
+Requires [Node.js](https://nodejs.org). Alternatively run `cd server && npm start` and open `http://127.0.0.1:8787` yourself, or serve the folder with any static file server (e.g. `python -m http.server 8000`) — the app then uses browser voices unless the neural server is also running.
 
 ## Voices and natural TTS
 
@@ -23,15 +25,15 @@ Browser voices are inconsistent across platforms — no browser ships Moroccan A
 | Italian | `it-IT-IsabellaNeural` |
 | Spanish | `es-ES-ElviraNeural` |
 
-Run it locally:
+Run it with `speechtoipa.bat` (Windows) or:
 
 ```bash
 cd server
 npm install
-npm start   # listens on http://127.0.0.1:8787
+npm start   # serves the app + voices on http://127.0.0.1:8787
 ```
 
-When the app is opened over `http://` or `file://`, it probes `http://127.0.0.1:8787/health` and automatically prefers the server over browser voices when found. Synthesized clips are cached on disk (`server/cache/`) and in the browser, so repeated sentences play instantly.
+The server also serves the app itself, so `http://127.0.0.1:8787` is all you need. If the app is instead opened over another `http://` origin or `file://`, it probes `http://127.0.0.1:8787/health` and automatically prefers the server over browser voices when found. Synthesized clips are cached on disk (`server/cache/`) and in the browser, so repeated sentences play instantly.
 
 For production (an `https://` page cannot call a local `http://` server), deploy `server/` to any Node host (Render, Railway, Fly, a VPS…) and point the app at it with the meta tag:
 

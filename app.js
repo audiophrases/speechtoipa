@@ -3095,12 +3095,20 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 // Repeated words light only when the reading actually reaches them (gap 0),
 // the only position where the evidence is unambiguous.
 //
-// Same exception, same reason, for `unverifiedIndices`: proper nouns
-// auto-credited with no score requirement (see findMatchesForTargetTokens)
-// greedily consume whatever spoken content is next, regardless of position
-// — that leftover content is just as permanently stable as an echoed twin,
-// so a timed buffer would eventually "confirm" a wrong position instead of
-// screening it out. Must also only light at gap 0.
+// `unverifiedIndices` (proper nouns auto-credited with no score requirement
+// — see findMatchesForTargetTokens) need an even stricter rule than twins.
+// A far-ahead unverified match is handled the same way as a twin (blocked
+// entirely, gap 0 required) for the same reason: the leftover spoken
+// content it grabbed is permanently stable, so a timed buffer would
+// eventually "confirm" a wrong position instead of screening it out. But
+// unlike a twin — whose TEXT is unambiguous once its POSITION is right — an
+// unverified match at gap 0 still isn't good enough evidence on its own:
+// "any leftover spoken content" includes a partial, still-forming fragment
+// of the word itself (e.g. the recognizer mid-transcribing "Beuda" before
+// the learner finishes saying it). So even at gap 0, it waits for one more
+// signal: either the recognizer finalizes this speech segment
+// (isFinalResult, i.e. its own silence/pause detection), or a LATER word
+// also matches, proving recognition has moved past this position.
 //
 // Final results are stable, so non-repeated, verified words bypass the
 // buffer on them. Mutates `wordStatus` and `sinceMap` in place.
@@ -3135,12 +3143,42 @@ function applyOutOfOrderConfirmation(
   for (let i = lockedPrefix; i < n; i++) {
     if (wordStatus[i] !== 'correct') continue;
     const gap = i - lastGoodIndex - 1;
+    const isUnverified = Boolean(unverifiedIndices && unverifiedIndices.has(i));
+
+    if (isUnverified) {
+      if (gap !== 0) {
+        // Far ahead of the reading frontier: same treatment as a twin —
+        // the leftover content it grabbed doesn't belong at this position.
+        // Never trust it out of order, regardless of isFinalResult.
+        sinceMap.delete(i);
+        wordStatus[i] = 'pending';
+        continue;
+      }
+      // At the true reading frontier, but gap 0 alone still isn't enough
+      // evidence on its own: "any leftover spoken content" includes a
+      // partial, still-forming fragment of the word itself (e.g. the
+      // recognizer mid-transcribing "Beuda" before the learner finishes
+      // saying it). Wait for one more signal: either the recognizer has
+      // finalized this speech segment (isFinalResult — its own
+      // silence/pause detection), or a LATER word has also matched,
+      // proving recognition has moved past this position.
+      const hasLaterEvidence = originalStatus.slice(i + 1).includes('correct');
+      if (isFinalResult || hasLaterEvidence) {
+        lastGoodIndex = i;
+        sinceMap.delete(i);
+      } else {
+        sinceMap.delete(i);
+        wordStatus[i] = 'pending';
+      }
+      continue;
+    }
+
     if (gap === 0) {
       lastGoodIndex = i;
       sinceMap.delete(i);
       continue;
     }
-    if (hasEarlierTwin[i] || (unverifiedIndices && unverifiedIndices.has(i))) {
+    if (hasEarlierTwin[i]) {
       sinceMap.delete(i);
       wordStatus[i] = 'pending';
       continue;

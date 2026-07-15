@@ -316,9 +316,36 @@ test('an auto-credited proper noun never lights even after the normal confirmati
   assert.strictEqual(wordStatus[4], 'pending');
 });
 
-test('an auto-credited proper noun lights instantly once the reading actually reaches it', () => {
+test('an auto-credited proper noun at the reading frontier still waits for confirmation on a bare interim', () => {
+  // Regression: gap 0 alone used to be treated as sufficient, but "any
+  // leftover spoken content" includes a partial, still-forming fragment of
+  // the word itself — e.g. the recognizer mid-transcribing "Beuda" before
+  // the learner finishes saying it. Reported symptom: "Beuda" validated
+  // instantly right after "a", before there was time to actually say it.
   const tokens = ['a', 'beuda'];
   const wordStatus = ['correct', 'correct'];
+  const unverified = new Set([1]);
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, new Map(), 1000, unverified);
+
+  assert.strictEqual(wordStatus[1], 'pending');
+});
+
+test('an auto-credited proper noun at the frontier lights once the recognizer finalizes the segment', () => {
+  const tokens = ['a', 'beuda'];
+  const wordStatus = ['correct', 'correct'];
+  const unverified = new Set([1]);
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, true, new Map(), 1000, unverified);
+
+  assert.strictEqual(wordStatus[1], 'correct');
+});
+
+test('an auto-credited proper noun at the frontier lights once a later word also matches', () => {
+  // "un poble" (the words after "Beuda") matching is evidence the reader
+  // has moved past it, even before any recognizer-side pause/final result.
+  const tokens = ['a', 'beuda', 'un', 'poble'];
+  const wordStatus = ['correct', 'correct', 'correct', 'correct'];
   const unverified = new Set([1]);
 
   applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, new Map(), 1000, unverified);

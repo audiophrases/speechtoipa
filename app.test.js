@@ -267,14 +267,44 @@ test('a repeated word lights instantly once the reading reaches it', () => {
   assert.strictEqual(sinceMap.size, 0);
 });
 
-test('a repeated word still lights on final results regardless of order', () => {
+test('a repeated word stays held even on final results', () => {
+  // Final results bypass the buffer for unique words, but not for repeats:
+  // the locked-prefix rematch re-feeds the full transcript, so the spoken
+  // token that lit the first twin gets recycled against the next one — and
+  // that recycled evidence is present on final results too.
   const tokens = ['the', 'cat', 'and', 'the', 'dog'];
   const wordStatus = ['correct', 'pending', 'pending', 'correct', 'pending'];
   const sinceMap = new Map();
 
   applyOutOfOrderConfirmation(wordStatus, tokens, 0, true, sinceMap, 1000);
 
-  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'correct', 'pending']);
+  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'pending', 'pending']);
+});
+
+test('saying one "the" does not light a later "the" across recognition events', () => {
+  // Regression for the exact reported flow: interim event locks target[0]
+  // ("the"), then the final event re-matches the remaining targets against
+  // the FULL transcript ["the"], recycling the already-spent token into a
+  // match for the "the" after "over". The buffer must hold it on the final.
+  const target = tokenizeText(
+    'The Glovo case over the false self-employed enters a decisive phase with the end of the instruction.',
+    'en'
+  );
+
+  const matches = findMatchesForTargetTokens(target.slice(1), ['the'], { langCode: 'en' });
+  const wordStatus = target.map(() => 'pending');
+  wordStatus[0] = 'correct';
+  matches.forEach((m, i) => {
+    if (m) wordStatus[i + 1] = 'correct';
+  });
+  // The raw matcher does recycle the token (this is the bug's mechanism)...
+  assert.strictEqual(wordStatus[4], 'correct');
+
+  applyOutOfOrderConfirmation(wordStatus, target, 1, true, new Map(), 1000);
+
+  // ...but the buffer must refuse it, on final results included.
+  assert.strictEqual(wordStatus[0], 'correct');
+  assert.strictEqual(wordStatus[4], 'pending');
 });
 
 test('short words no longer fuzzy-match inside longer words', () => {

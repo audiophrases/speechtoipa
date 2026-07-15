@@ -110,7 +110,11 @@ function serveStatic(pathname, res) {
   const ext = path.extname(filePath).toLowerCase();
   res.writeHead(200, {
     'Content-Type': STATIC_MIME[ext] || 'application/octet-stream',
-    'Cache-Control': 'no-cache',
+    // no-store, not no-cache: the app is developed against a running server,
+    // and stale app.js in an open tab has repeatedly masked fixes. There's no
+    // validator (ETag/Last-Modified) to revalidate against, so forbid storing
+    // outright — the files are tiny and local.
+    'Cache-Control': 'no-store',
   });
   fs.createReadStream(filePath).pipe(res);
 }

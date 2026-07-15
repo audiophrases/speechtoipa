@@ -2958,15 +2958,17 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 // index in `sinceMap`).
 //
 // Exception: a word whose identical text already appeared EARLIER in the
-// sentence ("a", "the", "le"...) never lights out of order at all, not even
-// after the delay. Once the learner has said the word once it exists in the
-// transcript permanently, so any leftover/echoed copy of it is stable
-// "evidence" that would always survive the delay — the delay only filters
-// transient noise, and this noise isn't transient. Repeated words light only
-// when the reading actually reaches them (gap 0), which is also the only
-// position where the evidence is unambiguous.
+// sentence ("a", "the", "le"...) never lights out of order at all — not on
+// interims and not on finals. Two reasons stable evidence lies for twins:
+// (1) once the learner has said the word it exists in the transcript
+// permanently, so an echoed copy always outlives the confirmation delay;
+// (2) updateLiveFeedback slices the locked prefix off the TARGET list but
+// re-feeds the FULL transcript, so the very spoken token that lit the first
+// twin gets recycled to "light" the next one — including on final results.
+// Repeated words light only when the reading actually reaches them (gap 0),
+// the only position where the evidence is unambiguous.
 //
-// Final results are stable, so they bypass the buffer entirely.
+// Final results are stable, so non-repeated words bypass the buffer on them.
 // Mutates `wordStatus` and `sinceMap` in place.
 function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isFinalResult, sinceMap, now = Date.now()) {
   const OUT_OF_ORDER_GAP = 2;
@@ -2991,7 +2993,7 @@ function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isF
   for (let i = lockedPrefix; i < n; i++) {
     if (wordStatus[i] !== 'correct') continue;
     const gap = i - lastGoodIndex - 1;
-    if (isFinalResult || gap === 0) {
+    if (gap === 0) {
       lastGoodIndex = i;
       sinceMap.delete(i);
       continue;
@@ -3001,7 +3003,7 @@ function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isF
       wordStatus[i] = 'pending';
       continue;
     }
-    if (gap < OUT_OF_ORDER_GAP) {
+    if (isFinalResult || gap < OUT_OF_ORDER_GAP) {
       lastGoodIndex = i;
       sinceMap.delete(i);
       continue;

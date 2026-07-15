@@ -10,6 +10,7 @@ const {
   buildDarijaSpokenTokens,
   applyOutOfOrderConfirmation,
   findMatchesForTargetTokens,
+  isLikelyProperNoun,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -382,6 +383,37 @@ test('the merge fallback does not fire when two words are simply both wrong', ()
   const matches = findMatchesForTargetTokens(['orange', 'banana'], ['xyzzy'], { langCode: 'en' });
   assert.strictEqual(matches[0], null);
   assert.strictEqual(matches[1], null);
+});
+
+test('isLikelyProperNoun flags mid-sentence capitalized words, not sentence-initial ones', () => {
+  // Real words from a Catalan article that has no CSV proper-noun metadata
+  // (custom pasted text): "Beuda" (a place name) must be flagged so it gets
+  // the lenient threshold; "Va" at position 0 must not be, even though it's
+  // capitalized too — sentence-initial capitalization isn't a proper-noun
+  // signal in any of this app's languages.
+  assert.strictEqual(isLikelyProperNoun('Va', 0), false);
+  assert.strictEqual(isLikelyProperNoun('Beuda', 3), true);
+  assert.strictEqual(isLikelyProperNoun('poble', 5), false);
+  // Accented capitals (Àngel, Ínsua...) must still count.
+  assert.strictEqual(isLikelyProperNoun('Àngel', 2), true);
+});
+
+test('proper-noun leniency actually changes the outcome for a borderline score', () => {
+  // A pair scoring 0.6 — below the default 0.7 threshold, but above the
+  // proper-noun floor (0.55) — proves isLikelyProperNoun being wired into
+  // targetTokenVariants for custom text has real effect, not just cosmetic.
+  const target = 'bqxfvrwkjm';
+  const candidate = 'zqxpvrwljn';
+
+  const asPlainWord = findMatchesForTargetTokens([target], [candidate], { langCode: 'ca' });
+  assert.strictEqual(asPlainWord[0], null);
+
+  const asProperNoun = findMatchesForTargetTokens(
+    [{ text: target, aliases: [], isProperNoun: true }],
+    [candidate],
+    { langCode: 'ca' }
+  );
+  assert.notStrictEqual(asProperNoun[0], null);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

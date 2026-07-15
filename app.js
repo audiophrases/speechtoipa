@@ -554,6 +554,16 @@ function inferProperNounFromTokenRow(row) {
   return false;
 }
 
+// Heuristic for custom/pasted text, which has no CSV proper-noun metadata:
+// a capitalized word that isn't sentence-initial is very likely a name or
+// place in Latin-script languages (en/fr/ca/es/it). \p{Lu} (Unicode
+// uppercase letter) rather than [A-Z] so accented capitals (Àngel, Ínsua)
+// still count.
+function isLikelyProperNoun(rawWord, indexInSentence) {
+  if (!rawWord || indexInSentence <= 0) return false;
+  return /\p{Lu}/u.test(rawWord);
+}
+
 async function ensureMasterRowsForLang(lang) {
   if (MASTER_ROWS_BY_LANG[lang]) return MASTER_ROWS_BY_LANG[lang];
 
@@ -1395,7 +1405,18 @@ function renderCurrentSentence() {
   } else {
     const rawTokens = fullText.split(/\s+/).filter(Boolean);
     targetTokens = rawTokens.map((w) => normalizeToken(w, state.targetLang));
-    targetTokenVariants = targetTokens.map((token) => ({ text: token, aliases: [] }));
+    // Custom/pasted text has no proper-noun metadata (that only exists in
+    // the curated lesson data). A capitalized word that isn't sentence-
+    // initial is very likely a name or place — and rare proper nouns
+    // (unfamiliar to the recognizer's language model, e.g. small-town
+    // names) are exactly the words it substitutes a more common known word
+    // for. Flag them so they get the existing, more lenient proper-noun
+    // match threshold instead of blocking the sentence on the default one.
+    targetTokenVariants = targetTokens.map((token, index) => ({
+      text: token,
+      aliases: [],
+      isProperNoun: isLikelyProperNoun(rawTokens[index], index),
+    }));
 
     rawTokens.forEach((word) => {
       const span = document.createElement('span');
@@ -3390,5 +3411,6 @@ if (typeof module !== 'undefined' && module.exports) {
     buildDarijaSpokenTokens,
     applyOutOfOrderConfirmation,
     findMatchesForTargetTokens,
+    isLikelyProperNoun,
   };
 }

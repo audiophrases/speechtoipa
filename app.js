@@ -2368,6 +2368,11 @@ function normalizeWord(w) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[.,!?;:;()"«»¿¡]/g, '')
+    // Elision apostrophes (l'a, d'accord, qu'il...) and English contractions
+    // (don't, it's...) are silent/fused in speech — recognizers commonly
+    // drop or fuse across them, so strip apostrophes rather than penalize
+    // that as an edit-distance mismatch.
+    .replace(/['’`]/g, '')
     .trim();
 }
 
@@ -2926,6 +2931,50 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
   return matches;
 }
 
+// A single word that doesn't clear the match threshold (e.g. an elision like
+// "l'a" scoring just under it) shouldn't block every later word from
+// lighting up — those were still spoken in order right after it. So the gap
+// is measured from the nearest earlier word actually confirmed correct, not
+// from the locked prefix: one skipped/pending word in between still counts
+// as "sequential" and turns green instantly. Only a jump of two or more
+// unpronounced words — the recognizer speculatively completing a whole
+// phrase ahead of the speaker — gets held back in `wordStatus` until it
+// survives OUT_OF_ORDER_CONFIRM_MS of interim updates (tracked per word
+// index in `sinceMap`). Final results are stable, so they bypass the buffer.
+// Mutates `wordStatus` and `sinceMap` in place.
+function applyOutOfOrderConfirmation(wordStatus, lockedPrefix, n, isFinalResult, sinceMap, now = Date.now()) {
+  const OUT_OF_ORDER_GAP = 2;
+  // Snapshot before mutating: the cleanup pass below must judge staleness
+  // against what matches[] actually found this round, not against statuses
+  // this same function demotes back to 'pending' while buffering them.
+  const originalStatus = wordStatus.slice();
+  let lastGoodIndex = lockedPrefix - 1;
+
+  for (let i = lockedPrefix; i < n; i++) {
+    if (wordStatus[i] !== 'correct') continue;
+    const gap = i - lastGoodIndex - 1;
+    if (isFinalResult || gap < OUT_OF_ORDER_GAP) {
+      lastGoodIndex = i;
+      sinceMap.delete(i);
+      continue;
+    }
+    const since = sinceMap.get(i);
+    if (since !== undefined && now - since >= OUT_OF_ORDER_CONFIRM_MS) {
+      lastGoodIndex = i;
+      sinceMap.delete(i);
+    } else {
+      if (since === undefined) sinceMap.set(i, now);
+      wordStatus[i] = 'pending';
+    }
+  }
+
+  for (const idx of sinceMap.keys()) {
+    if (idx < lockedPrefix || originalStatus[idx] !== 'correct' || isFinalResult) {
+      sinceMap.delete(idx);
+    }
+  }
+}
+
 function resetSentenceState() {
   lastTranscript = '';
   wordStatus = targetTokens.map(() => 'pending');
@@ -3107,33 +3156,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
   }
 
-  // Words matched sequentially (contiguous with the correct prefix) turn green
-  // instantly. A match further down the sentence — with pending words before
-  // it — is held back until it survives OUT_OF_ORDER_CONFIRM_MS of interim
-  // updates, so transient recognizer mis-matches never flash green. Final
-  // results are stable, so they bypass the buffer.
-  const now = Date.now();
-  let contiguousEnd = lockedPrefix;
-  while (contiguousEnd < n && wordStatus[contiguousEnd] === 'correct') {
-    contiguousEnd += 1;
-  }
-  for (const idx of outOfOrderCorrectSince.keys()) {
-    if (idx < contiguousEnd || isFinalResult || wordStatus[idx] !== 'correct') {
-      outOfOrderCorrectSince.delete(idx);
-    }
-  }
-  if (!isFinalResult) {
-    for (let i = contiguousEnd + 1; i < n; i++) {
-      if (wordStatus[i] !== 'correct') continue;
-      const since = outOfOrderCorrectSince.get(i);
-      if (since === undefined) {
-        outOfOrderCorrectSince.set(i, now);
-        wordStatus[i] = 'pending';
-      } else if (now - since < OUT_OF_ORDER_CONFIRM_MS) {
-        wordStatus[i] = 'pending';
-      }
-    }
-  }
+  applyOutOfOrderConfirmation(wordStatus, lockedPrefix, n, isFinalResult, outOfOrderCorrectSince);
 
   let stumbledIndex = -1;
   if (isFinalResult) {
@@ -3233,5 +3256,6 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceNaturalness,
     splitIntoSentences,
     buildDarijaSpokenTokens,
+    applyOutOfOrderConfirmation,
   };
 }

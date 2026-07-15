@@ -8,6 +8,7 @@ const {
   getVoiceNaturalness,
   splitIntoSentences,
   buildDarijaSpokenTokens,
+  applyOutOfOrderConfirmation,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -35,6 +36,17 @@ test('removes extra occurrences even when they are not consecutive', () => {
   const { filteredTokens } = filterUnexpectedRepeats(spoken, targetTokens, 'en');
 
   assert.deepStrictEqual(filteredTokens, tokenizeText('to be or not to be', 'en'));
+});
+
+test('strips elision apostrophes so "l’a" matches the recognizer’s "la"', () => {
+  const target = tokenizeText('l’a fait la France face à l’Espagne', 'fr');
+  const spoken = tokenizeText("la fait la france face a l'espagne", 'fr');
+
+  assert.deepStrictEqual(target, spoken);
+});
+
+test('strips apostrophes from English contractions', () => {
+  assert.deepStrictEqual(tokenizeText("don't stop", 'en'), ['dont', 'stop']);
 });
 
 test('normalizes digit tokens to match spelled-out numbers', () => {
@@ -158,6 +170,57 @@ test('Darija Arabic-script matching still rejects an unrelated word', () => {
   const { spokenTokens } = buildDarijaSpokenTokens('سلامكتاب', sentence);
 
   assert.deepStrictEqual(spokenTokens, ['salam']);
+});
+
+test('out-of-order buffer does not block later words after a single skipped word', () => {
+  // Mirrors "l'a fait la France..." where "l'a" fails the match threshold
+  // (French elision vs. the recognizer's "la") but every word after it was
+  // spoken correctly and in order — they must all light up immediately.
+  const wordStatus = ['pending', 'correct', 'correct', 'correct', 'correct', 'correct', 'correct'];
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 1000);
+
+  assert.deepStrictEqual(wordStatus, [
+    'pending',
+    'correct',
+    'correct',
+    'correct',
+    'correct',
+    'correct',
+    'correct',
+  ]);
+  assert.strictEqual(sinceMap.size, 0);
+});
+
+test('out-of-order buffer holds back a match that jumps over two+ unspoken words', () => {
+  const wordStatus = ['correct', 'pending', 'pending', 'correct'];
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 1000);
+
+  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'pending']);
+  assert.strictEqual(sinceMap.get(3), 1000);
+});
+
+test('out-of-order buffer confirms a jump-ahead match once it survives the delay', () => {
+  const sinceMap = new Map([[3, 1000]]);
+  const wordStatus = ['correct', 'pending', 'pending', 'correct'];
+
+  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 2000);
+
+  assert.strictEqual(wordStatus[3], 'correct');
+  assert.strictEqual(sinceMap.has(3), false);
+});
+
+test('out-of-order buffer is bypassed for final recognition results', () => {
+  const wordStatus = ['correct', 'pending', 'pending', 'correct'];
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, true, sinceMap, 1000);
+
+  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'correct']);
+  assert.strictEqual(sinceMap.size, 0);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

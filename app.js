@@ -3034,7 +3034,11 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
     // recognized yet at this position, it stays pending like any other
     // unattempted word.
     if (best && isProperNounToken(target)) {
-      matches[i] = best;
+      // Flagged unverified: this match required no text-similarity evidence
+      // at all, so unlike a normal or merge-fallback match, it carries no
+      // positional confidence — updateLiveFeedback must not let it bypass
+      // the out-of-order buffer just because a recognition result is final.
+      matches[i] = { ...best, autoCredited: true };
       usedUntil.value = best.end + 1;
       i += 1;
       continue;
@@ -3091,9 +3095,24 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 // Repeated words light only when the reading actually reaches them (gap 0),
 // the only position where the evidence is unambiguous.
 //
-// Final results are stable, so non-repeated words bypass the buffer on them.
-// Mutates `wordStatus` and `sinceMap` in place.
-function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isFinalResult, sinceMap, now = Date.now()) {
+// Same exception, same reason, for `unverifiedIndices`: proper nouns
+// auto-credited with no score requirement (see findMatchesForTargetTokens)
+// greedily consume whatever spoken content is next, regardless of position
+// — that leftover content is just as permanently stable as an echoed twin,
+// so a timed buffer would eventually "confirm" a wrong position instead of
+// screening it out. Must also only light at gap 0.
+//
+// Final results are stable, so non-repeated, verified words bypass the
+// buffer on them. Mutates `wordStatus` and `sinceMap` in place.
+function applyOutOfOrderConfirmation(
+  wordStatus,
+  targetTokens,
+  lockedPrefix,
+  isFinalResult,
+  sinceMap,
+  now = Date.now(),
+  unverifiedIndices = null
+) {
   const OUT_OF_ORDER_GAP = 2;
   const n = wordStatus.length;
 
@@ -3121,7 +3140,7 @@ function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isF
       sinceMap.delete(i);
       continue;
     }
-    if (hasEarlierTwin[i]) {
+    if (hasEarlierTwin[i] || (unverifiedIndices && unverifiedIndices.has(i))) {
       sinceMap.delete(i);
       wordStatus[i] = 'pending';
       continue;
@@ -3323,13 +3342,25 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     filteredTokens
   );
 
+  const unverifiedIndices = new Set();
   for (let i = 0; i < matches.length; i++) {
     if (matches[i]) {
       wordStatus[i + lockedPrefix] = 'correct';
+      if (matches[i].autoCredited) {
+        unverifiedIndices.add(i + lockedPrefix);
+      }
     }
   }
 
-  applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isFinalResult, outOfOrderCorrectSince);
+  applyOutOfOrderConfirmation(
+    wordStatus,
+    targetTokens,
+    lockedPrefix,
+    isFinalResult,
+    outOfOrderCorrectSince,
+    Date.now(),
+    unverifiedIndices
+  );
 
   let stumbledIndex = -1;
   if (isFinalResult) {

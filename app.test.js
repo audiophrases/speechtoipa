@@ -282,6 +282,50 @@ test('a repeated word stays held even on final results', () => {
   assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'pending', 'pending']);
 });
 
+test('an auto-credited proper noun far ahead of the reading position stays held, even on a final result', () => {
+  // Regression for the reported "Beuda"/"Garrotxa" screenshot: a proper
+  // noun credited with no score requirement (findMatchesForTargetTokens'
+  // isProperNounToken fallback) greedily grabs whatever spoken content is
+  // next, regardless of position — it must not be trusted just because a
+  // recognition result is final, unlike a normal, score-verified match.
+  const tokens = ['paula', 'grande', 'es', 'va', 'instal', 'lar', 'a', 'beuda'];
+  const wordStatus = ['correct', 'correct', 'pending', 'pending', 'pending', 'pending', 'pending', 'correct'];
+  const unverified = new Set([7]); // "beuda" was auto-credited
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 2, true, sinceMap, 1000, unverified);
+
+  assert.strictEqual(wordStatus[7], 'pending');
+});
+
+test('an auto-credited proper noun never lights even after the normal confirmation delay', () => {
+  // Same reasoning as repeated-word twins: the leftover spoken content an
+  // auto-credited match grabs is permanently stable, so a timed buffer
+  // would eventually "confirm" the wrong position instead of screening it
+  // out — it must be excluded from that path entirely, not just delayed.
+  const tokens = ['a', 'b', 'c', 'd', 'beuda'];
+  const wordStatus = ['correct', 'pending', 'pending', 'pending', 'correct'];
+  const unverified = new Set([4]);
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, sinceMap, 1000, unverified);
+  assert.strictEqual(wordStatus[4], 'pending');
+
+  // Simulate a lot of time passing across further interim updates.
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, sinceMap, 60000, unverified);
+  assert.strictEqual(wordStatus[4], 'pending');
+});
+
+test('an auto-credited proper noun lights instantly once the reading actually reaches it', () => {
+  const tokens = ['a', 'beuda'];
+  const wordStatus = ['correct', 'correct'];
+  const unverified = new Set([1]);
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, new Map(), 1000, unverified);
+
+  assert.strictEqual(wordStatus[1], 'correct');
+});
+
 test('saying one "the" does not light a later "the" across recognition events', () => {
   // Regression for the exact reported flow: interim event locks target[0]
   // ("the"), then the final event re-matches the remaining targets against
@@ -444,6 +488,43 @@ test('an unattempted proper noun still stays pending, not free-credited', () => 
 
   assert.notStrictEqual(matches[0], null);
   assert.strictEqual(matches[1], null);
+});
+
+test('end-to-end: an auto-credited proper noun far down the sentence does not light before the reading gets there', () => {
+  // Combines findMatchesForTargetTokens (real matcher) with
+  // applyOutOfOrderConfirmation (real buffer) the same way updateLiveFeedback
+  // does, reproducing the exact reported screenshot: cursor sitting on "es",
+  // with "va instal lar a" genuinely unspoken/unmatched, while a leftover
+  // recognized token ("garrotxa") would otherwise auto-credit "beuda" far
+  // ahead of where the reader has actually gotten to.
+  const tokens = ['paula', 'grande', 'es', 'va', 'instal', 'lar', 'a', 'beuda', 'un', 'poble'];
+  const lockedPrefix = 2; // "paula grande" already confirmed correct
+  const targetVariants = tokens.map((t) => ({
+    text: t,
+    aliases: [],
+    isProperNoun: t === 'beuda',
+  }));
+
+  const matches = findMatchesForTargetTokens(targetVariants.slice(lockedPrefix), ['garrotxa'], {
+    langCode: 'ca',
+  });
+
+  let wordStatus = tokens.map((_, i) => (i < lockedPrefix ? 'correct' : 'pending'));
+  const unverified = new Set();
+  matches.forEach((m, i) => {
+    if (m) {
+      wordStatus[i + lockedPrefix] = 'correct';
+      if (m.autoCredited) unverified.add(i + lockedPrefix);
+    }
+  });
+  // Confirms the raw matcher does reproduce the bug's mechanism (the fix
+  // lives entirely in the buffer, not in suppressing the auto-credit).
+  assert.strictEqual(wordStatus[tokens.indexOf('beuda')], 'correct');
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, lockedPrefix, true, new Map(), Date.now(), unverified);
+
+  assert.strictEqual(wordStatus[tokens.indexOf('es')], 'pending');
+  assert.strictEqual(wordStatus[tokens.indexOf('beuda')], 'pending');
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

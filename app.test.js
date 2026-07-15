@@ -399,9 +399,9 @@ test('isLikelyProperNoun flags mid-sentence capitalized words, not sentence-init
 });
 
 test('proper-noun leniency actually changes the outcome for a borderline score', () => {
-  // A pair scoring 0.6 — below the default 0.7 threshold, but above the
-  // proper-noun floor (0.55) — proves isLikelyProperNoun being wired into
-  // targetTokenVariants for custom text has real effect, not just cosmetic.
+  // A pair scoring 0.6 — below the default 0.7 threshold — proves
+  // isLikelyProperNoun being wired into targetTokenVariants for custom text
+  // has real effect, not just cosmetic.
   const target = 'bqxfvrwkjm';
   const candidate = 'zqxpvrwljn';
 
@@ -414,6 +414,36 @@ test('proper-noun leniency actually changes the outcome for a borderline score',
     { langCode: 'ca' }
   );
   assert.notStrictEqual(asProperNoun[0], null);
+});
+
+test('a proper noun is credited even when the recognizer substitutes an unrelated word', () => {
+  // Regression for the reported "Beuda" (a Catalan village) case: the
+  // recognizer doesn't know the name, so it substitutes a completely
+  // different, unrelated known word ("veure") rather than mishearing a
+  // similar-sounding one. No text-similarity threshold can bridge that gap
+  // — proper nouns are credited once ANY word was attempted in their
+  // position, regardless of how close it is.
+  const target = { text: 'beuda', aliases: [], isProperNoun: true };
+
+  const matches = findMatchesForTargetTokens([target], ['veure'], { langCode: 'ca' });
+
+  assert.notStrictEqual(matches[0], null);
+});
+
+test('an unattempted proper noun still stays pending, not free-credited', () => {
+  // The leniency only fires once something was actually recognized in the
+  // word's position — it doesn't wave proper nouns through unconditionally.
+  const target = { text: 'beuda', aliases: [], isProperNoun: true };
+  const next = { text: 'poble', aliases: [] };
+
+  // Only one spoken token exists; it gets greedily consumed by "beuda"
+  // (matching the app's existing sequential/greedy alignment behavior for
+  // every word, not something new to proper nouns), leaving "poble" with
+  // nothing left to attempt.
+  const matches = findMatchesForTargetTokens([target, next], ['poble'], { langCode: 'ca' });
+
+  assert.notStrictEqual(matches[0], null);
+  assert.strictEqual(matches[1], null);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

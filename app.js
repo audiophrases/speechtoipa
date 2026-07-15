@@ -2803,9 +2803,12 @@ function getApproxRules(langCode) {
   return { ...baseRules, coverageThreshold, properNounThreshold };
 }
 
+function isProperNounToken(targetToken) {
+  return Boolean(targetToken && typeof targetToken === 'object' && targetToken.isProperNoun);
+}
+
 function getTokenMatchThreshold(targetToken, langCode) {
-  const isProperNoun = Boolean(targetToken && typeof targetToken === 'object' && targetToken.isProperNoun);
-  if (!isProperNoun) return DEFAULT_MATCH_THRESHOLD;
+  if (!isProperNounToken(targetToken)) return DEFAULT_MATCH_THRESHOLD;
   const { properNounThreshold } = getApproxRules(langCode);
   if (!Number.isFinite(properNounThreshold)) return DEFAULT_MATCH_THRESHOLD;
   return properNounThreshold;
@@ -3014,6 +3017,23 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
     }
 
     if (best && best.score >= tokenThreshold) {
+      matches[i] = best;
+      usedUntil.value = best.end + 1;
+      i += 1;
+      continue;
+    }
+
+    // Proper nouns (names/places) are frequently outside the recognizer's
+    // vocabulary entirely — it substitutes a different known word rather
+    // than mishearing a similar-sounding one, which no text-similarity
+    // threshold can catch (e.g. "veure" recognized for "Beuda"). Rather than
+    // block the sentence on a word neither the learner nor the recognizer
+    // can reliably verify, credit it once ANY word was attempted in its
+    // position — no score requirement. `best` being non-null already means
+    // there was unconsumed spoken content here; if nothing's been
+    // recognized yet at this position, it stays pending like any other
+    // unattempted word.
+    if (best && isProperNounToken(target)) {
       matches[i] = best;
       usedUntil.value = best.end + 1;
       i += 1;

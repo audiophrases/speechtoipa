@@ -2844,6 +2844,25 @@ function darijaConsonantSkeleton(token) {
   return s.replace(/[aeiouə]/g, '');
 }
 
+// A lightweight, hand-rolled phonetic key for English — not IPA (no G2P
+// dependency exists in this project; a real one would need an external
+// engine like espeak-ng, which was tried and removed before this app
+// existed — see git history). Only includes reductions that are essentially
+// UNAMBIGUOUS regardless of context: "ck"/"ph"/"wh"/"qu" always sound the
+// same way, and a doubled letter is always just that letter held once. This
+// deliberately excludes genuinely context-dependent digraphs like "ch"
+// (church /tʃ/ vs chemistry /k/ vs chef /ʃ/) — collapsing those would cause
+// false matches between unrelated words, which is worse than missing a fix.
+function englishPhoneticKey(word) {
+  return String(word || '')
+    .toLowerCase()
+    .replace(/ck/g, 'k')
+    .replace(/ph/g, 'f')
+    .replace(/wh/g, 'w')
+    .replace(/qu/g, 'kw')
+    .replace(/([a-z])\1+/g, '$1');
+}
+
 function similarityScore(rawTarget, rawCandidate, langCode) {
   const target = normalizeToken(rawTarget, langCode);
   const cand = normalizeToken(rawCandidate, langCode);
@@ -2868,6 +2887,17 @@ function similarityScore(rawTarget, rawCandidate, langCode) {
     const skC = darijaConsonantSkeleton(cand);
     if (skT && skT === skC) {
       return 0.92;
+    }
+  }
+
+  // English: recognizer spelling differences that are unambiguously the
+  // same sound regardless of context (see englishPhoneticKey for why "ch"
+  // is deliberately excluded from this).
+  if ((langCode || state.targetLang) === 'en') {
+    const keyT = englishPhoneticKey(target);
+    const keyC = englishPhoneticKey(cand);
+    if (keyT && keyT === keyC) {
+      return 0.93;
     }
   }
 

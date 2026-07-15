@@ -343,6 +343,41 @@ test('two target words fused into one recognized word both match', () => {
   assert.strictEqual(matches[1], null); // "it" was dropped by the recognizer entirely
 });
 
+test('two target words fused into one word split differently still both match', () => {
+  // Same "be archived" case, but the recognizer split the fused sound into
+  // two DIFFERENT words ("beer kived") instead of one blob ("beerchived").
+  // This lands right at the 0.7 threshold (score 0.700) via the merge
+  // fallback's plain Levenshtein comparison — a real but narrow pass, not
+  // helped by the phonetic-key layer below (see the "church"/"kirk" test
+  // for why "ch" isn't collapsed to "k"). Pinned here so a future change
+  // doesn't silently tip it back under the threshold.
+  const target = tokenizeText('demands it be archived', 'en');
+  const spoken = tokenizeText('demanded beer kived', 'en');
+
+  const matches = findMatchesForTargetTokens(target, spoken, { langCode: 'en' });
+
+  assert.notStrictEqual(matches[2], null); // "be"
+  assert.notStrictEqual(matches[3], null); // "archived"
+});
+
+test('safe English digraphs and doubled letters match despite spelling differences', () => {
+  // ck/k, ph/f, wh/w, qu/kw and doubled letters are unambiguous regardless
+  // of context, unlike "ch" — safe to treat as equivalent everywhere.
+  assert.notStrictEqual(findMatchesForTargetTokens(['deck'], ['dek'], { langCode: 'en' })[0], null);
+  assert.notStrictEqual(findMatchesForTargetTokens(['phone'], ['fone'], { langCode: 'en' })[0], null);
+  assert.notStrictEqual(findMatchesForTargetTokens(['quick'], ['kwik'], { langCode: 'en' })[0], null);
+  assert.notStrictEqual(
+    findMatchesForTargetTokens(['committee'], ['comittee'], { langCode: 'en' })[0],
+    null
+  );
+});
+
+test('ambiguous "ch" is not collapsed to avoid matching unrelated words', () => {
+  // "ch" is /tʃ/ in "church" but /k/ in "chemistry" — collapsing it would
+  // make genuinely different words match by coincidence. Must stay unmatched.
+  assert.strictEqual(findMatchesForTargetTokens(['church'], ['kirk'], { langCode: 'en' })[0], null);
+});
+
 test('the merge fallback does not fire when two words are simply both wrong', () => {
   const matches = findMatchesForTargetTokens(['orange', 'banana'], ['xyzzy'], { langCode: 'en' });
   assert.strictEqual(matches[0], null);

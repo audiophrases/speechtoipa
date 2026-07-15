@@ -502,16 +502,24 @@ test('a proper noun is credited even when the recognizer substitutes an unrelate
 });
 
 test('an unattempted proper noun still stays pending, not free-credited', () => {
-  // The leniency only fires once something was actually recognized in the
-  // word's position — it doesn't wave proper nouns through unconditionally.
+  // The leniency only fires once something plausible was actually
+  // recognized in the word's position — it doesn't wave proper nouns
+  // through unconditionally when there's no spoken content at all.
+  const target = { text: 'beuda', aliases: [], isProperNoun: true };
+
+  const matches = findMatchesForTargetTokens([target], [], { langCode: 'ca' });
+
+  assert.strictEqual(matches[0], null);
+});
+
+test('a proper noun still greedily consumes plausible spoken content ahead of the next word', () => {
+  // Same greedy sequential alignment as every other word, now gated by the
+  // auto-credit floor: "veure" clears it for "beuda", so it's consumed
+  // before "poble" (the actually-correct next word) gets a turn.
   const target = { text: 'beuda', aliases: [], isProperNoun: true };
   const next = { text: 'poble', aliases: [] };
 
-  // Only one spoken token exists; it gets greedily consumed by "beuda"
-  // (matching the app's existing sequential/greedy alignment behavior for
-  // every word, not something new to proper nouns), leaving "poble" with
-  // nothing left to attempt.
-  const matches = findMatchesForTargetTokens([target, next], ['poble'], { langCode: 'ca' });
+  const matches = findMatchesForTargetTokens([target, next], ['veure'], { langCode: 'ca' });
 
   assert.notStrictEqual(matches[0], null);
   assert.strictEqual(matches[1], null);
@@ -522,8 +530,10 @@ test('end-to-end: an auto-credited proper noun far down the sentence does not li
   // applyOutOfOrderConfirmation (real buffer) the same way updateLiveFeedback
   // does, reproducing the exact reported screenshot: cursor sitting on "es",
   // with "va instal lar a" genuinely unspoken/unmatched, while a leftover
-  // recognized token ("garrotxa") would otherwise auto-credit "beuda" far
-  // ahead of where the reader has actually gotten to.
+  // recognized token ("veure" — a real substitution the recognizer would
+  // plausibly produce for "Beuda", clearing PROPER_NOUN_AUTO_CREDIT_FLOOR)
+  // would otherwise auto-credit "beuda" far ahead of where the reader has
+  // actually gotten to.
   const tokens = ['paula', 'grande', 'es', 'va', 'instal', 'lar', 'a', 'beuda', 'un', 'poble'];
   const lockedPrefix = 2; // "paula grande" already confirmed correct
   const targetVariants = tokens.map((t) => ({
@@ -532,7 +542,7 @@ test('end-to-end: an auto-credited proper noun far down the sentence does not li
     isProperNoun: t === 'beuda',
   }));
 
-  const matches = findMatchesForTargetTokens(targetVariants.slice(lockedPrefix), ['garrotxa'], {
+  const matches = findMatchesForTargetTokens(targetVariants.slice(lockedPrefix), ['veure'], {
     langCode: 'ca',
   });
 
@@ -552,6 +562,18 @@ test('end-to-end: an auto-credited proper noun far down the sentence does not li
 
   assert.strictEqual(wordStatus[tokens.indexOf('es')], 'pending');
   assert.strictEqual(wordStatus[tokens.indexOf('beuda')], 'pending');
+});
+
+test('the auto-credit floor rejects pure noise but still accepts a real substitution', () => {
+  // "veure" (0.4) is what the recognizer plausibly substitutes for an
+  // unknown "Beuda" — real evidence, must still pass. "garrotxa" (an
+  // unrelated real word) and a single stray character are noise with no
+  // meaningful relation to "beuda" — must not count as an attempt at all.
+  const target = { text: 'beuda', aliases: [], isProperNoun: true };
+
+  assert.notStrictEqual(findMatchesForTargetTokens([target], ['veure'], { langCode: 'ca' })[0], null);
+  assert.strictEqual(findMatchesForTargetTokens([target], ['garrotxa'], { langCode: 'ca' })[0], null);
+  assert.strictEqual(findMatchesForTargetTokens([target], ['x'], { langCode: 'ca' })[0], null);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

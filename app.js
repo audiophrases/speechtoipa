@@ -23,6 +23,15 @@ const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
 const DEFAULT_MATCH_THRESHOLD = 0.7;
 const PROPER_NOUN_THRESHOLD_FLOOR = 0.55;
+// Floor for auto-crediting a proper noun the recognizer substituted an
+// unrelated word for (see findMatchesForTargetTokens). Doesn't fix timing —
+// a partial in-progress fragment of the CORRECT word scores at or near 1.0
+// via the coverage rule regardless of threshold, since it's an exact prefix
+// (gap-0 confirmation in applyOutOfOrderConfirmation handles that instead).
+// This only rejects genuine noise: a single stray character or a truly
+// unrelated word, while still accepting real substitutions like "veure" for
+// "Beuda" (0.4).
+const PROPER_NOUN_AUTO_CREDIT_FLOOR = 0.2;
 const CEFR_LEVELS = [50, 60, 70, 80, 90, 100];
 const DEFAULT_CEFR_INDEX = 0;
 
@@ -3028,12 +3037,13 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
     // than mishearing a similar-sounding one, which no text-similarity
     // threshold can catch (e.g. "veure" recognized for "Beuda"). Rather than
     // block the sentence on a word neither the learner nor the recognizer
-    // can reliably verify, credit it once ANY word was attempted in its
-    // position — no score requirement. `best` being non-null already means
-    // there was unconsumed spoken content here; if nothing's been
-    // recognized yet at this position, it stays pending like any other
-    // unattempted word.
-    if (best && isProperNounToken(target)) {
+    // can reliably verify, credit it once ANY *plausible* word was attempted
+    // in its position: PROPER_NOUN_AUTO_CREDIT_FLOOR rejects pure noise (a
+    // stray character, a completely unrelated word) while still accepting
+    // real substitutions. `best` being non-null already means there was
+    // unconsumed spoken content here; if nothing's been recognized yet at
+    // this position, it stays pending like any other unattempted word.
+    if (best && best.score >= PROPER_NOUN_AUTO_CREDIT_FLOOR && isProperNounToken(target)) {
       // Flagged unverified: this match required no text-similarity evidence
       // at all, so unlike a normal or merge-fallback match, it carries no
       // positional confidence — updateLiveFeedback must not let it bypass

@@ -7,6 +7,7 @@ const {
   rankVoicesForLang,
   getVoiceNaturalness,
   splitIntoSentences,
+  buildDarijaSpokenTokens,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -129,6 +130,34 @@ test('falls back to the whole trimmed text when nothing splits it', () => {
 test('returns an empty list for blank custom text', () => {
   assert.deepStrictEqual(splitIntoSentences(''), []);
   assert.deepStrictEqual(splitIntoSentences('   \n  '), []);
+});
+
+test('Darija Arabic-script matching tolerates a single misheard letter', () => {
+  const sentence = {
+    tokens: [
+      { surface: 'سلام', transcription: 'salam' },
+      { surface: 'لباس', transcription: 'labas' },
+    ],
+  };
+
+  // Recognizer got the second word's first letter wrong (ل -> ن), as
+  // real speech recognizers commonly do with similar-sounding consonants.
+  const { spokenTokens } = buildDarijaSpokenTokens('سلامنباس', sentence);
+
+  assert.deepStrictEqual(spokenTokens, ['salam', 'labas']);
+});
+
+test('Darija Arabic-script matching still rejects an unrelated word', () => {
+  const sentence = {
+    tokens: [
+      { surface: 'سلام', transcription: 'salam' },
+      { surface: 'لباس', transcription: 'labas' },
+    ],
+  };
+
+  const { spokenTokens } = buildDarijaSpokenTokens('سلامكتاب', sentence);
+
+  assert.deepStrictEqual(spokenTokens, ['salam']);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

@@ -1560,6 +1560,15 @@ function getLangCode(l2) {
   }
 }
 
+// Speech recognition and speech synthesis are independent browser capabilities:
+// there's usually no Darija (ar-MA) TTS voice, so speech uses the ar-SA fallback
+// above, but Chrome's recognizer supports ar-MA directly and it matches Darija
+// pronunciation/vocabulary far better than the Modern Standard Arabic model.
+function getRecognitionLangCode(l2) {
+  if (l2 === 'ma') return 'ar-MA';
+  return getLangCode(l2);
+}
+
 function ensureArabicVoiceAvailable() {
   if (!window.speechSynthesis) return false;
   const voices = speechSynthesis.getVoices() || [];
@@ -2075,7 +2084,7 @@ function initRecognition() {
   }
 
   state.recognition = new SpeechRecognition();
-  state.recognition.lang = getLangCode(state.targetLang);
+  state.recognition.lang = getRecognitionLangCode(state.targetLang);
   state.recognition.continuous = true;
   state.recognition.interimResults = true;
   state.recognition.maxAlternatives = 1;
@@ -2177,7 +2186,7 @@ function startRecording() {
     lastCoachAt = 0;
     clearPendingCoach();
     clearRecognitionRestartTimer();
-    state.recognition.lang = getLangCode(state.targetLang);
+    state.recognition.lang = getRecognitionLangCode(state.targetLang);
     state.recognition.start();
   } catch (err) {
     console.error('Failed to start recognition', err);
@@ -2991,8 +3000,12 @@ function buildDarijaSpokenTokens(transcript, sentence) {
     return { spokenTokens, spokenTranscript: spokenTokens.join(' ') };
   }
 
-  // Arabic-script path: segment the recognized blob by searching expected Arabic token surfaces,
-  // then emit the aligned ma_latn token (transcription) for scoring.
+  // Arabic-script path: segment the recognized blob by fuzzily locating each
+  // expected token's Arabic surface (a single misheard/mistranscribed letter
+  // shouldn't silently drop the whole word), then emit the aligned ma_latn
+  // token (transcription) for scoring. Uses the same coverage/Levenshtein
+  // scoring and threshold as every other language's word matching, so the
+  // Accuracy slider actually applies to Darija written in Arabic script too.
   const recognized = normalizeArabicToken(raw);
   let pos = 0;
   const spokenTokens = [];
@@ -3002,14 +3015,50 @@ function buildDarijaSpokenTokens(transcript, sentence) {
     const latn = normalizeToken(t.transcription || '', 'ma');
     if (!surface || !latn) return;
 
-    const idx = recognized.indexOf(surface, pos);
-    if (idx !== -1) {
+    const match = findBestArabicSurfaceWindow(surface, recognized, pos);
+    if (match && match.score >= getTokenMatchThreshold(t, 'ma')) {
       spokenTokens.push(latn);
-      pos = idx + surface.length;
+      pos = match.end;
     }
   });
 
   return { spokenTokens, spokenTranscript: spokenTokens.join(' ') };
+}
+
+// Scores a candidate Arabic-script window the same way similarityScore()
+// scores latin tokens elsewhere: exact match, then the slider-driven coverage
+// shortcut, then a Levenshtein-distance fallback.
+function arabicSurfaceSimilarity(target, candidate) {
+  if (!target || !candidate) return 0;
+  if (target === candidate) return 1;
+  if (passesApproximationRule(target, candidate, 'ma')) return 1;
+  const dist = levenshtein(target, candidate);
+  const maxLen = Math.max(target.length, candidate.length);
+  return maxLen === 0 ? 0 : 1 - dist / maxLen;
+}
+
+// Slides a window (within a couple characters of the expected surface's
+// length) across the recognized blob starting at searchFrom, and returns the
+// best-scoring window — the closest thing to "where in the blob was this
+// word said", even if the recognizer got a letter or two wrong.
+function findBestArabicSurfaceWindow(surface, recognized, searchFrom) {
+  const minLen = Math.max(1, surface.length - 2);
+  const maxLen = surface.length + 2;
+  let best = null;
+
+  for (let start = searchFrom; start < recognized.length; start++) {
+    for (let len = minLen; len <= maxLen; len++) {
+      const end = start + len;
+      if (end > recognized.length) break;
+      const candidate = recognized.slice(start, end);
+      const score = arabicSurfaceSimilarity(surface, candidate);
+      if (!best || score > best.score) {
+        best = { start, end, score };
+      }
+    }
+  }
+
+  return best;
 }
 
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
@@ -3183,5 +3232,6 @@ if (typeof module !== 'undefined' && module.exports) {
     rankVoicesForLang,
     getVoiceNaturalness,
     splitIntoSentences,
+    buildDarijaSpokenTokens,
   };
 }

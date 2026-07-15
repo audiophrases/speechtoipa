@@ -2368,11 +2368,6 @@ function normalizeWord(w) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[.,!?;:;()"«»¿¡]/g, '')
-    // Elision apostrophes (l'a, d'accord, qu'il...) and English contractions
-    // (don't, it's...) are silent/fused in speech — recognizers commonly
-    // drop or fuse across them, so strip apostrophes rather than penalize
-    // that as an edit-distance mismatch.
-    .replace(/['’`]/g, '')
     .trim();
 }
 
@@ -2847,6 +2842,17 @@ function similarityScore(rawTarget, rawCandidate, langCode) {
 
   if (target === cand) return 1;
 
+  // Elision apostrophes (l'a, d'accord, qu'il...) and English contractions
+  // (don't, it's...) are silent/fused in speech — recognizers commonly drop
+  // or fuse across them. Score an apostrophe-insensitive match as exact,
+  // without touching normalizeWord/tokenizeText (which other code — repeat
+  // filtering, digit counting — depends on keeping apostrophes intact).
+  const targetNoApos = target.replace(/['’`]/g, '');
+  const candNoApos = cand.replace(/['’`]/g, '');
+  if (targetNoApos && targetNoApos === candNoApos) {
+    return 1;
+  }
+
   // Darija latin: allow vowel-omission variants by comparing consonant skeletons.
   if ((langCode || state.targetLang) === 'ma' && /[a-z]/i.test(target) && /[a-z]/i.test(cand)) {
     const skT = darijaConsonantSkeleton(target);
@@ -3257,5 +3263,6 @@ if (typeof module !== 'undefined' && module.exports) {
     splitIntoSentences,
     buildDarijaSpokenTokens,
     applyOutOfOrderConfirmation,
+    findMatchesForTargetTokens,
   };
 }

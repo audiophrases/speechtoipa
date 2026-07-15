@@ -9,6 +9,7 @@ const {
   splitIntoSentences,
   buildDarijaSpokenTokens,
   applyOutOfOrderConfirmation,
+  findMatchesForTargetTokens,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -38,15 +39,26 @@ test('removes extra occurrences even when they are not consecutive', () => {
   assert.deepStrictEqual(filteredTokens, tokenizeText('to be or not to be', 'en'));
 });
 
-test('strips elision apostrophes so "l’a" matches the recognizer’s "la"', () => {
-  const target = tokenizeText('l’a fait la France face à l’Espagne', 'fr');
-  const spoken = tokenizeText("la fait la france face a l'espagne", 'fr');
+test('matches an elided "l’a" against the recognizer’s fused "la"', () => {
+  const targetTokens = tokenizeText('l’a fait la France face à l’Espagne', 'fr');
+  const spokenTokens = tokenizeText("la fait la france face a l'espagne", 'fr');
 
-  assert.deepStrictEqual(target, spoken);
+  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode: 'fr' });
+
+  assert.strictEqual(matches.filter(Boolean).length, targetTokens.length);
 });
 
-test('strips apostrophes from English contractions', () => {
-  assert.deepStrictEqual(tokenizeText("don't stop", 'en'), ['dont', 'stop']);
+test('matches an English contraction against its fused recognized form', () => {
+  const targetTokens = tokenizeText("don't stop", 'en');
+  const spokenTokens = tokenizeText('dont stop', 'en');
+
+  const matches = findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode: 'en' });
+
+  assert.strictEqual(matches.filter(Boolean).length, targetTokens.length);
+});
+
+test('tokenizeText still keeps apostrophes intact (unaffected by scoring-level fix)', () => {
+  assert.deepStrictEqual(tokenizeText("don't stop", 'en'), ["don't", 'stop']);
 });
 
 test('normalizes digit tokens to match spelled-out numbers', () => {

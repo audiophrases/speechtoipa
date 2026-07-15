@@ -143,6 +143,12 @@ let targetTokenVariants = [];
 let lastTranscript = '';
 let currentSentenceText = '';
 let wordStatus = [];
+// Interim results sometimes match a word further down the sentence before the
+// learner has reached it, making it flash green and then revert. Out-of-order
+// matches (ones with unpronounced words before them) must persist for this
+// long before they turn green; sequential matches stay instant.
+const OUT_OF_ORDER_CONFIRM_MS = 900;
+const outOfOrderCorrectSince = new Map();
 let wordTooltipEl;
 let sentenceTooltipEl;
 let sentenceTooltipTimer = null;
@@ -2914,6 +2920,7 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 function resetSentenceState() {
   lastTranscript = '';
   wordStatus = targetTokens.map(() => 'pending');
+  outOfOrderCorrectSince.clear();
   updateWordSpanClasses();
 }
 
@@ -3051,6 +3058,34 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
   }
 
+  // Words matched sequentially (contiguous with the correct prefix) turn green
+  // instantly. A match further down the sentence — with pending words before
+  // it — is held back until it survives OUT_OF_ORDER_CONFIRM_MS of interim
+  // updates, so transient recognizer mis-matches never flash green. Final
+  // results are stable, so they bypass the buffer.
+  const now = Date.now();
+  let contiguousEnd = lockedPrefix;
+  while (contiguousEnd < n && wordStatus[contiguousEnd] === 'correct') {
+    contiguousEnd += 1;
+  }
+  for (const idx of outOfOrderCorrectSince.keys()) {
+    if (idx < contiguousEnd || isFinalResult || wordStatus[idx] !== 'correct') {
+      outOfOrderCorrectSince.delete(idx);
+    }
+  }
+  if (!isFinalResult) {
+    for (let i = contiguousEnd + 1; i < n; i++) {
+      if (wordStatus[i] !== 'correct') continue;
+      const since = outOfOrderCorrectSince.get(i);
+      if (since === undefined) {
+        outOfOrderCorrectSince.set(i, now);
+        wordStatus[i] = 'pending';
+      } else if (now - since < OUT_OF_ORDER_CONFIRM_MS) {
+        wordStatus[i] = 'pending';
+      }
+    }
+  }
+
   let stumbledIndex = -1;
   if (isFinalResult) {
     let firstNotCorrect = -1;
@@ -3076,6 +3111,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
       for (let k = Math.max(i + 1, lockedPrefix); k < n; k++) {
         if (wordStatus[k] === 'correct') {
           wordStatus[k] = 'pending';
+          outOfOrderCorrectSince.delete(k);
         }
       }
       break;

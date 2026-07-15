@@ -2886,11 +2886,15 @@ function similarityScore(rawTarget, rawCandidate, langCode) {
   return 1 - normDist;
 }
 
+function targetTokenText(targetToken) {
+  if (!targetToken) return '';
+  return typeof targetToken === 'string' ? targetToken : targetToken.text || targetToken.surface || '';
+}
+
 function scoreTokenWithAliases(targetToken, candidate, langCode) {
   if (!targetToken || !candidate) return 0;
 
-  const primary =
-    typeof targetToken === 'string' ? targetToken : targetToken.text || targetToken.surface || '';
+  const primary = targetTokenText(targetToken);
   const aliases =
     typeof targetToken === 'string'
       ? []
@@ -2911,6 +2915,28 @@ function scoreTokenWithAliases(targetToken, candidate, langCode) {
   return bestScore;
 }
 
+// Finds the best-scoring spoken window (up to MAX_WINDOW consecutive spoken
+// tokens, concatenated) starting at or after `from`, scored against `text`
+// via plain similarityScore (no pronunciation-alias lookup — used only for
+// the merged-word fallback below, where "target" isn't a real single token).
+function findBestSpokenWindow(text, spokenTokens, from, langCode) {
+  const S = spokenTokens.length;
+  const MAX_WINDOW = 3;
+  let best = null;
+
+  for (let start = from; start < S; start++) {
+    for (let end = start; end < Math.min(S, start + MAX_WINDOW); end++) {
+      const concatenated = normalizeWord(spokenTokens.slice(start, end + 1).join(''));
+      const score = similarityScore(text, concatenated, langCode);
+      if (!best || score > best.score) {
+        best = { start, end, score };
+      }
+    }
+  }
+
+  return best;
+}
+
 function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {}) {
   const matches = new Array(targetTokens.length).fill(null);
   const usedUntil = { value: 0 };
@@ -2919,7 +2945,8 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
   const S = spokenTokens.length;
   const MAX_WINDOW = 3;
 
-  for (let i = 0; i < targetTokens.length; i++) {
+  let i = 0;
+  while (i < targetTokens.length) {
     const target = targetTokens[i];
     const tokenThreshold = getTokenMatchThreshold(target, targetLang);
     let best = null;
@@ -2938,9 +2965,34 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
     if (best && best.score >= tokenThreshold) {
       matches[i] = best;
       usedUntil.value = best.end + 1;
-    } else {
-      matches[i] = null;
+      i += 1;
+      continue;
     }
+
+    // This word alone didn't clear the threshold. The recognizer may have
+    // fused it with the NEXT word into one run-together chunk — a
+    // word-boundary miss ("be archived" -> "beerchived") rather than a
+    // mispronunciation — so try the pair merged before giving up on it.
+    const nextTarget = targetTokens[i + 1];
+    const mergedMatch = nextTarget
+      ? findBestSpokenWindow(
+          targetTokenText(target) + targetTokenText(nextTarget),
+          spokenTokens,
+          usedUntil.value,
+          targetLang
+        )
+      : null;
+
+    if (mergedMatch && mergedMatch.score >= DEFAULT_MATCH_THRESHOLD) {
+      matches[i] = mergedMatch;
+      matches[i + 1] = mergedMatch;
+      usedUntil.value = mergedMatch.end + 1;
+      i += 2;
+      continue;
+    }
+
+    matches[i] = null;
+    i += 1;
   }
 
   return matches;

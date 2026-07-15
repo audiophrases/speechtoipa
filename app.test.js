@@ -325,6 +325,30 @@ test('recognizer-merged words still match their first target word', () => {
   assert.notStrictEqual(matches[0], null);
 });
 
+test('two target words fused into one recognized word both match', () => {
+  // Regression for the reported "be archived" -> "beerchived" case: a
+  // word-boundary miss (not a mispronunciation), where two SEPARATE target
+  // words come back as one run-together spoken token. Neither "be" nor
+  // "archived" clears the threshold alone against "beerchived", but merged
+  // ("bearchived") they're one edit away from it.
+  const target = tokenizeText('demands it be archived', 'en');
+  const spoken = tokenizeText('demanded beerchived', 'en');
+
+  const matches = findMatchesForTargetTokens(target, spoken, { langCode: 'en' });
+
+  assert.notStrictEqual(matches[2], null); // "be"
+  assert.notStrictEqual(matches[3], null); // "archived"
+  // Genuinely unspoken words in between are still correctly left unmatched —
+  // the merge fallback only kicks in for the failing pair, not everything.
+  assert.strictEqual(matches[1], null); // "it" was dropped by the recognizer entirely
+});
+
+test('the merge fallback does not fire when two words are simply both wrong', () => {
+  const matches = findMatchesForTargetTokens(['orange', 'banana'], ['xyzzy'], { langCode: 'en' });
+  assert.strictEqual(matches[0], null);
+  assert.strictEqual(matches[1], null);
+});
+
 test('ranks natural voices above local standard voices for a language', () => {
   const voices = [
     { name: 'Microsoft David - English (United States)', lang: 'en-US', localService: true },

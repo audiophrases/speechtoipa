@@ -2813,6 +2813,15 @@ function orderedCharacterCoverage(target, candidate) {
 function passesApproximationRule(target, candidate, langCode) {
   const { coverageThreshold } = getApproxRules(langCode);
   if (!coverageThreshold) return false;
+  // Coverage only counts target letters found inside the candidate, so tiny
+  // words get free passes: "a" is fully "covered" by any word containing an
+  // a, "et" by half the words in French. Short words must match exactly (or
+  // via EQUIV_GROUPS/Levenshtein upstream) — leniency is for long words.
+  if (target.length <= 2) return false;
+  // Likewise, a candidate much longer than the target means the target is
+  // just buried inside a different word — except the recognizer-merge case
+  // ("bondia" for "bon dia"), where the candidate starts with the target.
+  if (candidate.length > target.length + 2 && !candidate.startsWith(target)) return false;
   return orderedCharacterCoverage(target, candidate) >= coverageThreshold;
 }
 
@@ -2946,10 +2955,33 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
 // unpronounced words — the recognizer speculatively completing a whole
 // phrase ahead of the speaker — gets held back in `wordStatus` until it
 // survives OUT_OF_ORDER_CONFIRM_MS of interim updates (tracked per word
-// index in `sinceMap`). Final results are stable, so they bypass the buffer.
+// index in `sinceMap`).
+//
+// Exception: a word whose identical text already appeared EARLIER in the
+// sentence ("a", "the", "le"...) never lights out of order at all, not even
+// after the delay. Once the learner has said the word once it exists in the
+// transcript permanently, so any leftover/echoed copy of it is stable
+// "evidence" that would always survive the delay — the delay only filters
+// transient noise, and this noise isn't transient. Repeated words light only
+// when the reading actually reaches them (gap 0), which is also the only
+// position where the evidence is unambiguous.
+//
+// Final results are stable, so they bypass the buffer entirely.
 // Mutates `wordStatus` and `sinceMap` in place.
-function applyOutOfOrderConfirmation(wordStatus, lockedPrefix, n, isFinalResult, sinceMap, now = Date.now()) {
+function applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isFinalResult, sinceMap, now = Date.now()) {
   const OUT_OF_ORDER_GAP = 2;
+  const n = wordStatus.length;
+
+  // Apostrophe-insensitive, matching the elision equivalence in similarityScore.
+  const wordKey = (t) => String(t || '').replace(/['’`]/g, '');
+  const seenWords = new Set();
+  const hasEarlierTwin = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    const key = wordKey(targetTokens[i]);
+    hasEarlierTwin[i] = seenWords.has(key);
+    seenWords.add(key);
+  }
+
   // Snapshot before mutating: the cleanup pass below must judge staleness
   // against what matches[] actually found this round, not against statuses
   // this same function demotes back to 'pending' while buffering them.
@@ -2959,7 +2991,17 @@ function applyOutOfOrderConfirmation(wordStatus, lockedPrefix, n, isFinalResult,
   for (let i = lockedPrefix; i < n; i++) {
     if (wordStatus[i] !== 'correct') continue;
     const gap = i - lastGoodIndex - 1;
-    if (isFinalResult || gap < OUT_OF_ORDER_GAP) {
+    if (isFinalResult || gap === 0) {
+      lastGoodIndex = i;
+      sinceMap.delete(i);
+      continue;
+    }
+    if (hasEarlierTwin[i]) {
+      sinceMap.delete(i);
+      wordStatus[i] = 'pending';
+      continue;
+    }
+    if (gap < OUT_OF_ORDER_GAP) {
       lastGoodIndex = i;
       sinceMap.delete(i);
       continue;
@@ -3162,7 +3204,7 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
     }
   }
 
-  applyOutOfOrderConfirmation(wordStatus, lockedPrefix, n, isFinalResult, outOfOrderCorrectSince);
+  applyOutOfOrderConfirmation(wordStatus, targetTokens, lockedPrefix, isFinalResult, outOfOrderCorrectSince);
 
   let stumbledIndex = -1;
   if (isFinalResult) {

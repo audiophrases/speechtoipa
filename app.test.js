@@ -188,10 +188,11 @@ test('out-of-order buffer does not block later words after a single skipped word
   // Mirrors "l'a fait la France..." where "l'a" fails the match threshold
   // (French elision vs. the recognizer's "la") but every word after it was
   // spoken correctly and in order — they must all light up immediately.
+  const tokens = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5', 'w6'];
   const wordStatus = ['pending', 'correct', 'correct', 'correct', 'correct', 'correct', 'correct'];
   const sinceMap = new Map();
 
-  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 1000);
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, false, sinceMap, 1000);
 
   assert.deepStrictEqual(wordStatus, [
     'pending',
@@ -206,33 +207,92 @@ test('out-of-order buffer does not block later words after a single skipped word
 });
 
 test('out-of-order buffer holds back a match that jumps over two+ unspoken words', () => {
+  const tokens = ['w0', 'w1', 'w2', 'w3'];
   const wordStatus = ['correct', 'pending', 'pending', 'correct'];
   const sinceMap = new Map();
 
-  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 1000);
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, false, sinceMap, 1000);
 
   assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'pending']);
   assert.strictEqual(sinceMap.get(3), 1000);
 });
 
 test('out-of-order buffer confirms a jump-ahead match once it survives the delay', () => {
+  const tokens = ['w0', 'w1', 'w2', 'w3'];
   const sinceMap = new Map([[3, 1000]]);
   const wordStatus = ['correct', 'pending', 'pending', 'correct'];
 
-  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, false, sinceMap, 2000);
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, false, sinceMap, 2000);
 
   assert.strictEqual(wordStatus[3], 'correct');
   assert.strictEqual(sinceMap.has(3), false);
 });
 
 test('out-of-order buffer is bypassed for final recognition results', () => {
+  const tokens = ['w0', 'w1', 'w2', 'w3'];
   const wordStatus = ['correct', 'pending', 'pending', 'correct'];
   const sinceMap = new Map();
 
-  applyOutOfOrderConfirmation(wordStatus, 0, wordStatus.length, true, sinceMap, 1000);
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, true, sinceMap, 1000);
 
   assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'correct']);
   assert.strictEqual(sinceMap.size, 0);
+});
+
+test('a repeated word never lights out of order, even after the delay', () => {
+  // "the cat and the dog": the learner has said "the" once, so "the" exists
+  // in the transcript permanently — a leftover/echoed copy of it is stable
+  // evidence that would always outlive the confirmation delay. The second
+  // "the" must stay pending while "cat"/"and" are unspoken, no matter how
+  // long the phantom match persists.
+  const tokens = ['the', 'cat', 'and', 'the', 'dog'];
+  const wordStatus = ['correct', 'pending', 'pending', 'correct', 'pending'];
+  // Simulate the phantom match having already survived far past the delay.
+  const sinceMap = new Map([[3, 0]]);
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, false, sinceMap, 60000);
+
+  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'pending', 'pending']);
+  assert.strictEqual(sinceMap.has(3), false);
+});
+
+test('a repeated word lights instantly once the reading reaches it', () => {
+  const tokens = ['the', 'cat', 'and', 'the', 'dog'];
+  const wordStatus = ['correct', 'correct', 'correct', 'correct', 'pending'];
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, false, sinceMap, 1000);
+
+  assert.deepStrictEqual(wordStatus, ['correct', 'correct', 'correct', 'correct', 'pending']);
+  assert.strictEqual(sinceMap.size, 0);
+});
+
+test('a repeated word still lights on final results regardless of order', () => {
+  const tokens = ['the', 'cat', 'and', 'the', 'dog'];
+  const wordStatus = ['correct', 'pending', 'pending', 'correct', 'pending'];
+  const sinceMap = new Map();
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 0, true, sinceMap, 1000);
+
+  assert.deepStrictEqual(wordStatus, ['correct', 'pending', 'pending', 'correct', 'pending']);
+});
+
+test('short words no longer fuzzy-match inside longer words', () => {
+  // At Accuracy 50% the coverage rule used to score "a" as a perfect match
+  // against ANY word containing the letter a — which is how the second "a"
+  // in a sentence lit up green from leftover transcript tokens.
+  const matches = findMatchesForTargetTokens(['a'], ['fait'], { langCode: 'fr' });
+  assert.strictEqual(matches[0], null);
+
+  const matchesEt = findMatchesForTargetTokens(['et'], ['le'], { langCode: 'fr' });
+  assert.strictEqual(matchesEt[0], null);
+});
+
+test('recognizer-merged words still match their first target word', () => {
+  // "bon dia" often comes back merged as "bondia" — the prefix exception
+  // keeps that working despite the stricter length guard.
+  const matches = findMatchesForTargetTokens(['bon', 'dia'], ['bondia'], { langCode: 'ca' });
+  assert.notStrictEqual(matches[0], null);
 });
 
 test('ranks natural voices above local standard voices for a language', () => {

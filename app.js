@@ -2828,25 +2828,31 @@ function spokenNumberRunMatches(runTokens, target, langCode) {
   return false;
 }
 
-// If the target is a written number, find the shortest run of spoken
-// number-words starting at `from` that evaluates to it. Returns the run's end
-// index (inclusive) or -1. The run may skip lone connector tokens but must
-// otherwise be contiguous number-words.
+// If the target is a written number, scan forward from `from` for a run of
+// spoken number-words that evaluates to it, and return its { start, end }
+// (inclusive) or null. Like the normal word matcher, this scans forward rather
+// than requiring the run to begin exactly at `from`: the number-words often sit
+// at the far end of the transcript while earlier targets are already locked
+// (e.g. the whole sentence is read and only the trailing year remains). Each
+// candidate run must be contiguous number-words (lone connectors allowed).
 function matchSpokenNumberRun(spokenTokens, from, target, langCode) {
-  if (from >= spokenTokens.length) return -1;
-  if (!isNumberWordToken(spokenTokens[from], langCode)) return -1;
+  for (let start = from; start < spokenTokens.length; start++) {
+    if (!isNumberWordToken(spokenTokens[start], langCode)) continue;
 
-  let end = from;
-  while (end + 1 < spokenTokens.length && isNumberWordToken(spokenTokens[end + 1], langCode)) {
-    end += 1;
-  }
-
-  for (let k = from; k <= end; k++) {
-    if (spokenNumberRunMatches(spokenTokens.slice(from, k + 1), target, langCode)) {
-      return k;
+    let end = start;
+    while (end + 1 < spokenTokens.length && isNumberWordToken(spokenTokens[end + 1], langCode)) {
+      end += 1;
     }
+
+    for (let k = start; k <= end; k++) {
+      if (spokenNumberRunMatches(spokenTokens.slice(start, k + 1), target, langCode)) {
+        return { start, end: k };
+      }
+    }
+
+    start = end; // skip the interior of this run we already fully tested
   }
-  return -1;
+  return null;
 }
 
 function numericTokenValue(text) {
@@ -3259,10 +3265,10 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
     // auto-credit weakness — just format-tolerant.
     const targetNumber = numericTokenValue(targetTokenText(target));
     if (targetNumber !== null) {
-      const runEnd = matchSpokenNumberRun(spokenTokens, usedUntil.value, targetNumber, targetLang);
-      if (runEnd !== -1) {
-        matches[i] = { start: usedUntil.value, end: runEnd, score: 1 };
-        usedUntil.value = runEnd + 1;
+      const run = matchSpokenNumberRun(spokenTokens, usedUntil.value, targetNumber, targetLang);
+      if (run) {
+        matches[i] = { start: run.start, end: run.end, score: 1 };
+        usedUntil.value = run.end + 1;
         i += 1;
         continue;
       }

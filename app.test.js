@@ -114,6 +114,23 @@ test('a written year matches its spoken number-words, in order or scrambled', ()
   }
 });
 
+test('a trailing year matches when it is the only remaining target (full transcript)', () => {
+  // Live regression caught by the debug log: with the sentence fully read,
+  // only "1996" is still unlocked, so findMatchesForTargetTokens gets just
+  // ["1996"] but the FULL transcript — the number-words sit at the far end.
+  // The number matcher must scan forward to them, not only look at the start
+  // (spoken token 0 is "un" = 1, which must not short-circuit the search).
+  const target = { text: '1996', aliases: [] };
+  const spoken = tokenizeText(
+    'un dels esdeveniments que se celebra des del mil nou-cents noranta-sis',
+    'ca'
+  );
+
+  const matches = findMatchesForTargetTokens([target], spoken, { langCode: 'ca' });
+
+  assert.notStrictEqual(matches[0], null);
+});
+
 test('spokenNumberRunMatches accepts correct readings across languages and orders', () => {
   assert.strictEqual(spokenNumberRunMatches(['mil', 'nou-cents', 'noranta-sis'], 1996, 'ca'), true);
   assert.strictEqual(spokenNumberRunMatches(['nou-cents', 'noranta-sis', 'mil'], 1996, 'ca'), true);

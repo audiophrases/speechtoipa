@@ -2202,6 +2202,8 @@ function startRecording() {
   }
   if (!state.recognition) initRecognition();
   try {
+    debugLogClear();
+    debugLog({ event: 'recording-start', lang: state.targetLang, sentence: currentSentenceText });
     clearNextSentenceTimer();
     lastTranscript = '';
     els.transcript.textContent = '';
@@ -3596,6 +3598,41 @@ function findBestArabicSurfaceWindow(surface, recognized, searchFrom) {
   return best;
 }
 
+// Diagnostic logging. Off by default; enable with ?debug=1 in the URL or
+// localStorage.setItem('debugLogging','1'). When on, each live-feedback pass
+// POSTs the real recognizer transcript and per-word matching decisions to the
+// local server (/debug-log), which appends them to logs/debug.log. This is the
+// only window into what the *running* app actually received — invaluable when a
+// fix passes unit tests but the live app still misbehaves (usually a stale
+// cached app.js, exactly the failure that motivated this).
+const DEBUG_LOGGING = (() => {
+  try {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug')) return true;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('debugLogging') === '1') return true;
+  } catch (_) {}
+  return false;
+})();
+
+function debugLog(entry) {
+  if (!DEBUG_LOGGING || typeof fetch === 'undefined') return;
+  try {
+    fetch('/debug-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts: new Date().toISOString(), ...entry }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// Clears logs/debug.log so each recording session's log stands alone.
+function debugLogClear() {
+  if (!DEBUG_LOGGING || typeof fetch === 'undefined') return;
+  try {
+    fetch('/debug-log', { method: 'DELETE', keepalive: true }).catch(() => {});
+  } catch (_) {}
+}
+
 function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   // Fresh speech activity: the learner is still reading, so cancel any
   // coaching that was waiting for silence.
@@ -3689,6 +3726,33 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
   }
 
   updateWordSpanClasses();
+
+  if (DEBUG_LOGGING) {
+    debugLog({
+      event: 'liveFeedback',
+      lang: state.targetLang,
+      accuracyIndex: state.approxLevelIndex,
+      sentence: currentSentenceText,
+      isFinalResult,
+      transcript,
+      filtered: filteredTranscript,
+      filteredTokens,
+      lockedPrefix,
+      targets: targetTokens.map((tok, idx) => {
+        const m = idx >= lockedPrefix ? matches[idx - lockedPrefix] : null;
+        const variant = targetTokenVariants[idx];
+        return {
+          i: idx,
+          text: variant && typeof variant === 'object' ? variant.text : tok,
+          status: wordStatus[idx],
+          matched: Boolean(m),
+          score: m && typeof m.score === 'number' ? Number(m.score.toFixed(3)) : null,
+          auto: Boolean(m && m.autoCredited),
+          proper: Boolean(variant && variant.isProperNoun),
+        };
+      }),
+    });
+  }
 
   if (els.transcript) {
     let displayTranscript = filteredTranscript;

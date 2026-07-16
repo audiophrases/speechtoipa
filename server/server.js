@@ -12,6 +12,11 @@ const CACHE_DIR = path.join(SERVER_DIR, 'cache');
 // The server also serves the app itself, so `speechtoipa.bat` (or `npm start`)
 // is all that's needed to run everything at one URL.
 const APP_ROOT = path.join(SERVER_DIR, '..');
+// Diagnostic log the browser app appends to (when ?debug=1), so the actual
+// recognizer transcript and matching decisions can be inspected off-device.
+const DEBUG_LOG_DIR = path.join(APP_ROOT, 'logs');
+const DEBUG_LOG_FILE = path.join(DEBUG_LOG_DIR, 'debug.log');
+const MAX_DEBUG_BODY = 256 * 1024;
 
 const STATIC_MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -78,6 +83,53 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// Appends one JSON diagnostic entry (JSONL) from the browser app. Each
+// recording session clears the file first (DELETE), so debug.log always holds
+// just the most recent session — easy to read start to finish.
+function handleDebugLog(req, res) {
+  if (req.method === 'DELETE') {
+    try {
+      fs.mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+      fs.writeFileSync(DEBUG_LOG_FILE, '');
+    } catch (err) {
+      console.error('debug-log clear failed:', err.message || err);
+    }
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  let body = '';
+  let aborted = false;
+  req.on('data', (chunk) => {
+    body += chunk;
+    if (body.length > MAX_DEBUG_BODY) {
+      aborted = true;
+      req.destroy();
+    }
+  });
+  req.on('end', () => {
+    if (aborted) return;
+    try {
+      const parsed = JSON.parse(body || '{}');
+      fs.mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+      fs.appendFileSync(DEBUG_LOG_FILE, JSON.stringify(parsed) + '\n');
+      res.writeHead(204);
+      res.end();
+    } catch (err) {
+      sendJson(res, 400, { error: 'Invalid log payload' });
+    }
+  });
+  req.on('error', () => {
+    aborted = true;
+  });
+}
+
 function serveStatic(pathname, res) {
   let decoded;
   try {
@@ -137,6 +189,11 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/voices') {
     sendJson(res, 200, VOICES);
+    return;
+  }
+
+  if (url.pathname === '/debug-log') {
+    handleDebugLog(req, res);
     return;
   }
 

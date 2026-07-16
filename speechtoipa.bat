@@ -25,6 +25,14 @@ if not exist "server\node_modules" (
   popd
 )
 
+rem Alpha: a previous instance may still be holding port 8787 (its window left
+rem open, or a crash), which would make this launch serve stale server.js. Kill
+rem whatever is LISTENING on 8787 first so every run starts a fresh server.
+echo Freeing port 8787 if a previous instance is still running...
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8787" ^| findstr "LISTENING"') do taskkill /f /pid %%p >nul 2>nul
+rem Brief pause so the socket is fully released before we rebind to it.
+timeout /t 1 /nobreak >nul
+
 echo.
 echo Starting the app with neural voices at http://127.0.0.1:8787
 echo Alpha: diagnostic logging is ON; entries are written to logs\debug.log

@@ -11,6 +11,7 @@ const {
   applyOutOfOrderConfirmation,
   findMatchesForTargetTokens,
   isLikelyProperNoun,
+  spokenNumberRunMatches,
 } = require('./app.js');
 
 test('drops repeated sequences once expected counts are met', () => {
@@ -94,6 +95,48 @@ test('tokenizes French digit sequences into number words', () => {
     'quatre',
     'cinq',
   ]);
+});
+
+test('a written year matches its spoken number-words, in order or scrambled', () => {
+  // Reported case: the text has "1996"; the recognizer emits it as Catalan
+  // words, and sometimes floats the scale word ("mil") to the end. Both must
+  // still credit the "1996" token, since they add up to it.
+  const target = tokenizeText('des del 1996', 'ca');
+
+  for (const spokenText of [
+    'des del 1996',
+    'des del mil nou-cents noranta-sis',
+    'des del nou-cents noranta-sis mil',
+  ]) {
+    const spoken = tokenizeText(spokenText, 'ca');
+    const matches = findMatchesForTargetTokens(target, spoken, { langCode: 'ca' });
+    assert.notStrictEqual(matches[2], null, `"${spokenText}" should credit 1996`);
+  }
+});
+
+test('spokenNumberRunMatches accepts correct readings across languages and orders', () => {
+  assert.strictEqual(spokenNumberRunMatches(['mil', 'nou-cents', 'noranta-sis'], 1996, 'ca'), true);
+  assert.strictEqual(spokenNumberRunMatches(['nou-cents', 'noranta-sis', 'mil'], 1996, 'ca'), true);
+  assert.strictEqual(spokenNumberRunMatches(['dos', 'mil', 'vint-i-quatre'], 2024, 'ca'), true);
+  assert.strictEqual(spokenNumberRunMatches(['nineteen', 'ninety-six'], 1996, 'en'), true);
+  assert.strictEqual(spokenNumberRunMatches(['twenty', 'twenty-four'], 2024, 'en'), true);
+  assert.strictEqual(
+    spokenNumberRunMatches(['mille', 'neuf', 'cent', 'quatre-vingt-seize'], 1996, 'fr'),
+    true
+  );
+  assert.strictEqual(
+    spokenNumberRunMatches(['mil', 'novecientos', 'noventa', 'y', 'seis'], 1996, 'es'),
+    true
+  );
+  assert.strictEqual(spokenNumberRunMatches(['mille', 'novecento', 'novanta', 'sei'], 1996, 'it'), true);
+});
+
+test('spokenNumberRunMatches rejects a wrong number and non-number words', () => {
+  // Never a false positive: a near-miss reading (1997) must not credit 1996.
+  assert.strictEqual(spokenNumberRunMatches(['mil', 'nou-cents', 'noranta-set'], 1996, 'ca'), false);
+  assert.strictEqual(spokenNumberRunMatches(['hello', 'world'], 1996, 'en'), false);
+  // A partial reading (just the thousand) isn't the whole number yet.
+  assert.strictEqual(spokenNumberRunMatches(['mil'], 1996, 'ca'), false);
 });
 
 test('normalizes time tokens to match o\'clock phrase in English', () => {
@@ -341,16 +384,42 @@ test('an auto-credited proper noun at the frontier lights once the recognizer fi
   assert.strictEqual(wordStatus[1], 'correct');
 });
 
-test('an auto-credited proper noun at the frontier lights once a later word also matches', () => {
+test('an auto-credited proper noun at the frontier lights once a later VERIFIED word also matches', () => {
   // "un poble" (the words after "Beuda") matching is evidence the reader
   // has moved past it, even before any recognizer-side pause/final result.
   const tokens = ['a', 'beuda', 'un', 'poble'];
   const wordStatus = ['correct', 'correct', 'correct', 'correct'];
-  const unverified = new Set([1]);
+  const unverified = new Set([1]); // only "beuda" is auto-credited; "un"/"poble" verified
 
   applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, new Map(), 1000, unverified);
 
   assert.strictEqual(wordStatus[1], 'correct');
+});
+
+test('consecutive auto-credited proper nouns do not confirm each other on an interim', () => {
+  // Reported "Prospe Beach": two adjacent proper nouns the recognizer emits
+  // as one predicted phrase. Neither is a verified word, so on an interim
+  // result neither can serve as the other's "later evidence" — both must
+  // wait rather than validating each other instantly ("too fast").
+  const tokens = ['la', 'prospe', 'beach', 'es'];
+  const wordStatus = ['correct', 'correct', 'correct', 'pending'];
+  const unverified = new Set([1, 2]); // both proper nouns auto-credited
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, false, new Map(), 1000, unverified);
+
+  assert.strictEqual(wordStatus[1], 'pending');
+  assert.strictEqual(wordStatus[2], 'pending');
+});
+
+test('consecutive auto-credited proper nouns both light once the recognizer finalizes', () => {
+  const tokens = ['la', 'prospe', 'beach', 'es'];
+  const wordStatus = ['correct', 'correct', 'correct', 'pending'];
+  const unverified = new Set([1, 2]);
+
+  applyOutOfOrderConfirmation(wordStatus, tokens, 1, true, new Map(), 1000, unverified);
+
+  assert.strictEqual(wordStatus[1], 'correct');
+  assert.strictEqual(wordStatus[2], 'correct');
 });
 
 test('saying one "the" does not light a later "the" across recognition events', () => {

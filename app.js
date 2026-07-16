@@ -2542,6 +2542,41 @@ const NUMBER_WORDS_BY_LANG = {
       90: 'novanta',
     },
   },
+  es: {
+    small: {
+      0: 'cero',
+      1: 'uno',
+      2: 'dos',
+      3: 'tres',
+      4: 'cuatro',
+      5: 'cinco',
+      6: 'seis',
+      7: 'siete',
+      8: 'ocho',
+      9: 'nueve',
+      10: 'diez',
+      11: 'once',
+      12: 'doce',
+      13: 'trece',
+      14: 'catorce',
+      15: 'quince',
+      16: 'dieciseis',
+      17: 'diecisiete',
+      18: 'dieciocho',
+      19: 'diecinueve',
+      20: 'veinte',
+    },
+    tens: {
+      20: 'veinte',
+      30: 'treinta',
+      40: 'cuarenta',
+      50: 'cincuenta',
+      60: 'sesenta',
+      70: 'setenta',
+      80: 'ochenta',
+      90: 'noventa',
+    },
+  },
   ma: {
     small: {
       0: 'sefr',
@@ -2631,6 +2666,189 @@ function digitToNumberWord(token, langCode) {
     return mapForLang.tens[num];
   }
   return token;
+}
+
+// --- Spoken number-word evaluation -------------------------------------------
+// The recognizer represents a written number like "1996" inconsistently: as
+// digits ("1996"), as words ("mil nou-cents noranta-sis"), sometimes with the
+// scale word floated to the end ("nou-cents noranta-sis mil"), or — in English
+// — as two 2-digit groups ("nineteen ninety-six"). Rather than force the
+// learner to hit one exact form, we evaluate whatever number-words appear and
+// check whether they add up to the target number. Every check below compares
+// against the KNOWN target value, so a wrong reading can never coincidentally
+// pass — it just doesn't match.
+
+// Bare hundred multipliers ("nou-cents" = nou × cents): multiply the current group by 100.
+const HUNDRED_MULT_WORDS_BY_LANG = {
+  en: ['hundred'],
+  fr: ['cent', 'cents'],
+  ca: ['cent', 'cents'],
+  es: ['cien', 'ciento', 'cientos'],
+  it: ['cento'],
+};
+
+// Thousand scale words: multiply the current group by 1000, then flush it.
+const THOUSAND_WORDS_BY_LANG = {
+  en: ['thousand'],
+  fr: ['mille', 'mil'],
+  ca: ['mil'],
+  es: ['mil'],
+  it: ['mille', 'mila'],
+};
+
+// Fused hundreds — languages that write them as one word instead of unit+hundred.
+const FUSED_HUNDREDS_BY_LANG = {
+  es: {
+    doscientos: 200, trescientos: 300, cuatrocientos: 400, quinientos: 500,
+    seiscientos: 600, setecientos: 700, ochocientos: 800, novecientos: 900,
+  },
+  it: {
+    duecento: 200, trecento: 300, quattrocento: 400, cinquecento: 500,
+    seicento: 600, settecento: 700, ottocento: 800, novecento: 900,
+  },
+};
+
+// Number-word connectors ("noventa y seis", "vint-i-sis"): ignored in evaluation.
+const NUMBER_CONNECTORS = new Set(['i', 'y', 'e', 'et', 'and']);
+
+const numberWordValueCache = new Map();
+function getNumberWordValues(langCode) {
+  const lang = (langCode || state.targetLang || 'en').split('-')[0];
+  if (numberWordValueCache.has(lang)) return numberWordValueCache.get(lang);
+
+  const values = new Map();
+  const maps = NUMBER_WORDS_BY_LANG[lang];
+  if (maps) {
+    for (const [num, word] of Object.entries(maps.small || {})) values.set(word, Number(num));
+    for (const [num, word] of Object.entries(maps.tens || {})) values.set(word, Number(num));
+  }
+  for (const [word, val] of Object.entries(FUSED_HUNDREDS_BY_LANG[lang] || {})) values.set(word, val);
+  numberWordValueCache.set(lang, values);
+  return values;
+}
+
+// Classify one atomic sub-word (a token, possibly split on hyphens). Returns
+// { plain } (add to group), { hmul: true } (×100), { scale } (×1000 + flush),
+// { skip: true } (connector), or null if it isn't a number-word at all.
+function classifyNumberAtom(atom, langCode) {
+  if (!atom) return { skip: true };
+  if (NUMBER_CONNECTORS.has(atom)) return { skip: true };
+  if (/^\d+$/.test(atom)) return { plain: Number(atom) };
+  const lang = (langCode || state.targetLang || 'en').split('-')[0];
+  if ((HUNDRED_MULT_WORDS_BY_LANG[lang] || []).includes(atom)) return { hmul: true };
+  if ((THOUSAND_WORDS_BY_LANG[lang] || []).includes(atom)) return { scale: 1000 };
+  const values = getNumberWordValues(langCode);
+  if (values.has(atom)) return { plain: values.get(atom) };
+  // French pluralizes some number words ("quatre-vingts", "cinquantes"): accept
+  // a trailing -s when the singular is a known number word.
+  if (lang === 'fr' && atom.endsWith('s') && values.has(atom.slice(0, -1))) {
+    return { plain: values.get(atom.slice(0, -1)) };
+  }
+  return null;
+}
+
+// Split a token like "vint-i-sis" or "nou-cents" into its atoms.
+function atomizeNumberToken(token) {
+  return String(token || '').toLowerCase().split(/[-\s]+/).filter(Boolean);
+}
+
+function isNumberWordToken(token, langCode) {
+  const atoms = atomizeNumberToken(token);
+  if (!atoms.length) return false;
+  return atoms.every((atom) => classifyNumberAtom(atom, langCode) !== null);
+}
+
+// French is vigesimal: "quatre-vingt(s)" is 4×20 = 80, not 4+20. Collapse the
+// adjacent pair into a single 80 before the additive pass, which then handles
+// the remainder normally ("quatre-vingt-seize" -> [80,16] = 96, "quatre-vingt-
+// dix-sept" -> [80,10,7] = 97). "soixante-dix" (60+10) is already additive.
+function collapseFrenchVigesimal(atoms) {
+  const out = [];
+  for (let i = 0; i < atoms.length; i++) {
+    if (atoms[i] === 'quatre' && (atoms[i + 1] === 'vingt' || atoms[i + 1] === 'vingts')) {
+      out.push('80');
+      i += 1;
+    } else {
+      out.push(atoms[i]);
+    }
+  }
+  return out;
+}
+
+// Left-to-right evaluation of a flat atom sequence (standard number grammar).
+function evaluateNumberAtoms(atoms, langCode) {
+  const lang = (langCode || state.targetLang || 'en').split('-')[0];
+  if (lang === 'fr') atoms = collapseFrenchVigesimal(atoms);
+  let result = 0;
+  let current = 0;
+  for (const atom of atoms) {
+    const cls = classifyNumberAtom(atom, langCode);
+    if (!cls || cls.skip) continue;
+    if (cls.scale) {
+      current = (current || 1) * cls.scale;
+      result += current;
+      current = 0;
+    } else if (cls.hmul) {
+      current = (current || 1) * 100;
+    } else {
+      current += cls.plain;
+    }
+  }
+  return result + current;
+}
+
+function tokenNumberValue(token, langCode) {
+  return evaluateNumberAtoms(atomizeNumberToken(token), langCode);
+}
+
+// Does this run of spoken tokens represent `target`? Tries, in order:
+//  1. Standard in-order evaluation ("mil nou-cents noranta-sis" = 1996).
+//  2. Sum of each token's own value — order-independent, so it survives the
+//     recognizer floating the scale word around ("nou-cents noranta-sis mil").
+//  3. Two 2-digit groups concatenated — the English year reading
+//     ("nineteen ninety-six" = 19·100 + 96).
+// All three are equality checks against the known target, so none can produce
+// a false positive; they only widen which correct readings are accepted.
+function spokenNumberRunMatches(runTokens, target, langCode) {
+  if (!runTokens.length) return false;
+  if (!runTokens.every((t) => isNumberWordToken(t, langCode))) return false;
+
+  const flatAtoms = runTokens.flatMap((t) => atomizeNumberToken(t));
+  if (evaluateNumberAtoms(flatAtoms, langCode) === target) return true;
+
+  const perToken = runTokens.map((t) => tokenNumberValue(t, langCode));
+  if (perToken.reduce((a, b) => a + b, 0) === target) return true;
+
+  if (perToken.length === 2 && perToken[0] > 0 && perToken[0] < 100 && perToken[1] < 100) {
+    if (perToken[0] * 100 + perToken[1] === target) return true;
+  }
+
+  return false;
+}
+
+// If the target is a written number, find the shortest run of spoken
+// number-words starting at `from` that evaluates to it. Returns the run's end
+// index (inclusive) or -1. The run may skip lone connector tokens but must
+// otherwise be contiguous number-words.
+function matchSpokenNumberRun(spokenTokens, from, target, langCode) {
+  if (from >= spokenTokens.length) return -1;
+  if (!isNumberWordToken(spokenTokens[from], langCode)) return -1;
+
+  let end = from;
+  while (end + 1 < spokenTokens.length && isNumberWordToken(spokenTokens[end + 1], langCode)) {
+    end += 1;
+  }
+
+  for (let k = from; k <= end; k++) {
+    if (spokenNumberRunMatches(spokenTokens.slice(from, k + 1), target, langCode)) {
+      return k;
+    }
+  }
+  return -1;
+}
+
+function numericTokenValue(text) {
+  return /^\d+$/.test(text) ? Number(text) : null;
 }
 
 function normalizeToken(rawToken, langCode) {
@@ -3032,6 +3250,22 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
       continue;
     }
 
+    // Written number ("1996"): the normal path above only matches when the
+    // recognizer emitted literal digits. If it instead emitted the number as
+    // words (possibly scrambled), evaluate that run and accept it if it adds
+    // up to this exact number. A verified match (parses to the target), so no
+    // auto-credit weakness — just format-tolerant.
+    const targetNumber = numericTokenValue(targetTokenText(target));
+    if (targetNumber !== null) {
+      const runEnd = matchSpokenNumberRun(spokenTokens, usedUntil.value, targetNumber, targetLang);
+      if (runEnd !== -1) {
+        matches[i] = { start: usedUntil.value, end: runEnd, score: 1 };
+        usedUntil.value = runEnd + 1;
+        i += 1;
+        continue;
+      }
+    }
+
     // Proper nouns (names/places) are frequently outside the recognizer's
     // vocabulary entirely — it substitutes a different known word rather
     // than mishearing a similar-sounding one, which no text-similarity
@@ -3170,9 +3404,21 @@ function applyOutOfOrderConfirmation(
       // recognizer mid-transcribing "Beuda" before the learner finishes
       // saying it). Wait for one more signal: either the recognizer has
       // finalized this speech segment (isFinalResult — its own
-      // silence/pause detection), or a LATER word has also matched,
+      // silence/pause detection), or a later word has also matched,
       // proving recognition has moved past this position.
-      const hasLaterEvidence = originalStatus.slice(i + 1).includes('correct');
+      //
+      // That later word must be VERIFIED, not another unverified auto-credit.
+      // Consecutive proper nouns ("Prospe Beach") the recognizer emits as one
+      // predicted phrase would otherwise confirm each other instantly, which
+      // is exactly the "validated too fast" feel — so they can only lean on a
+      // real, score-matched word downstream (or the recognizer finalizing).
+      let hasLaterEvidence = false;
+      for (let j = i + 1; j < n; j++) {
+        if (originalStatus[j] === 'correct' && !(unverifiedIndices && unverifiedIndices.has(j))) {
+          hasLaterEvidence = true;
+          break;
+        }
+      }
       if (isFinalResult || hasLaterEvidence) {
         lastGoodIndex = i;
         sinceMap.delete(i);
@@ -3511,5 +3757,7 @@ if (typeof module !== 'undefined' && module.exports) {
     applyOutOfOrderConfirmation,
     findMatchesForTargetTokens,
     isLikelyProperNoun,
+    spokenNumberRunMatches,
+    isNumberWordToken,
   };
 }

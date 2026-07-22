@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { handleDictationRequest } from './dictation.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_TEXT_LENGTH = 500;
@@ -194,6 +195,11 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/debug-log') {
     handleDebugLog(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/dictation') {
+    await handleDictationRequest(req, res);
     return;
   }
 

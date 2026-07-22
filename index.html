@@ -56,6 +56,20 @@
       <h2 id="custom-modal-title">Practice custom text</h2>
       <p class="small">Use your own text without losing your lesson progress.</p>
 
+      <div class="fetch-panel" id="fetch-panel">
+        <div class="fetch-panel-head">
+          <span class="fetch-panel-title">✨ Fetch a passage</span>
+          <span class="small" id="fetch-panel-sub">A real, dated passage from a plain-language encyclopedia.</span>
+        </div>
+        <div class="fetch-buttons">
+          <button type="button" class="secondary" data-fetch-length="short">Short</button>
+          <button type="button" class="secondary" data-fetch-length="medium">Medium</button>
+          <button type="button" class="secondary" data-fetch-length="long">Long</button>
+        </div>
+        <div id="fetch-status" class="status status-inline" role="status" aria-live="polite"></div>
+        <div id="fetch-citation" class="fetch-citation hidden"></div>
+      </div>
+
       <div class="custom-field">
         <label for="custom-sentence">Custom practice</label>
         <textarea

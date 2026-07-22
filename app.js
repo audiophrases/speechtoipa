@@ -661,6 +661,10 @@ function cacheElements() {
   els.customReset = document.getElementById('custom-reset');
   els.customModal = document.getElementById('custom-modal');
   els.customDismissButtons = Array.from(document.querySelectorAll('[data-close-modal]'));
+  els.fetchPanelSub = document.getElementById('fetch-panel-sub');
+  els.fetchStatus = document.getElementById('fetch-status');
+  els.fetchCitation = document.getElementById('fetch-citation');
+  els.fetchButtons = Array.from(document.querySelectorAll('[data-fetch-length]'));
 
   // UI debug removed: don't display TTS base URL.
 }
@@ -904,6 +908,13 @@ function attachEventListeners() {
     }
   });
 
+  (els.fetchButtons || []).forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      fetchPassage(btn.dataset.fetchLength);
+    });
+  });
+
   (els.customDismissButtons || []).forEach((btn) => {
     btn.addEventListener('click', () => closeCustomModal(true));
   });
@@ -971,6 +982,7 @@ function openCustomModal() {
   if (!els.customModal) return;
   els.customModal.classList.remove('hidden');
   els.customModal.setAttribute('aria-hidden', 'false');
+  updateFetchPanel();
   if (els.customInput) {
     els.customInput.value = state.customSentence || '';
     els.customInput.focus();
@@ -988,6 +1000,116 @@ function closeCustomModal(resetSelection = false) {
     if (state.mode !== 'custom') {
       state.lessonId = fallbackLessonId;
     }
+  }
+}
+
+// --- Fetch a passage (auto-fill custom text from a plain-language encyclopedia) ---
+
+// The dictation endpoint lives only on the neural TTS server (server/), never on
+// the Google Translate fallback, so resolve its base the same way TTS does and
+// bail out when only the Google fallback is configured.
+function getDictationBaseUrl() {
+  const base = getTtsBaseUrl();
+  if (!base || isGoogleTranslateTts(base)) return null;
+  return base.replace(/\/$/, '');
+}
+
+function setFetchStatus(text) {
+  if (els.fetchStatus) els.fetchStatus.textContent = text || '';
+}
+
+function hideFetchCitation() {
+  if (els.fetchCitation) {
+    els.fetchCitation.classList.add('hidden');
+    els.fetchCitation.textContent = '';
+  }
+}
+
+function formatCitationDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Refresh the panel each time the modal opens: gate on server availability and
+// name the current target language.
+function updateFetchPanel() {
+  setFetchStatus('');
+  hideFetchCitation();
+  const hasServer = Boolean(getDictationBaseUrl());
+  (els.fetchButtons || []).forEach((btn) => {
+    btn.disabled = !hasServer;
+  });
+  if (!els.fetchPanelSub) return;
+  if (!hasServer) {
+    els.fetchPanelSub.textContent = 'Fetching passages needs the neural voice server (run speechtoipa.bat).';
+    return;
+  }
+  const langLabel = (TARGET_LANGS.find((l) => l.code === state.targetLang) || {}).label || 'the target language';
+  els.fetchPanelSub.textContent = `A real, dated ${langLabel} passage from a plain-language encyclopedia.`;
+}
+
+// Titles/URLs come from an external source, so build the citation with
+// textContent / assigned href — never innerHTML — to avoid injection.
+function renderFetchCitation(data) {
+  if (!els.fetchCitation) return;
+  els.fetchCitation.textContent = '';
+
+  const title = document.createElement('div');
+  title.className = 'fetch-citation-title';
+  title.textContent = data.title || '';
+  els.fetchCitation.appendChild(title);
+
+  const meta = document.createElement('div');
+  meta.className = 'small';
+  const date = formatCitationDate(data.date);
+  meta.textContent = data.source + (date ? ` · updated ${date}` : '');
+  els.fetchCitation.appendChild(meta);
+
+  if (data.url) {
+    const link = document.createElement('a');
+    link.href = data.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'fetch-citation-link';
+    link.textContent = 'Read the original ↗';
+    els.fetchCitation.appendChild(link);
+  }
+
+  els.fetchCitation.classList.remove('hidden');
+}
+
+async function fetchPassage(length) {
+  const base = getDictationBaseUrl();
+  if (!base) {
+    setFetchStatus('Fetching passages needs the neural voice server. Run speechtoipa.bat, then try again.');
+    return;
+  }
+  const lang = state.targetLang || 'en';
+  (els.fetchButtons || []).forEach((btn) => {
+    btn.disabled = true;
+  });
+  hideFetchCitation();
+  setFetchStatus('Fetching a passage…');
+  try {
+    const resp = await fetch(
+      `${base}/api/dictation?lang=${encodeURIComponent(lang)}&length=${encodeURIComponent(length)}`
+    );
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to fetch passage');
+    if (els.customInput) {
+      els.customInput.value = data.text;
+      els.customInput.focus();
+    }
+    setFetchStatus('');
+    renderFetchCitation(data);
+  } catch (err) {
+    setFetchStatus(err.message || 'Could not fetch a passage.');
+  } finally {
+    (els.fetchButtons || []).forEach((btn) => {
+      btn.disabled = false;
+    });
   }
 }
 

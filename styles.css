@@ -210,7 +210,15 @@ textarea {
   align-items: center;
   justify-content: center;
   background: rgba(15, 23, 42, 0.85);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
+}
+
+/* .hidden is declared earlier and has the same specificity as .waking-overlay,
+   so its display:none would lose the cascade tie and the overlay would be
+   permanently visible. Same reason .modal.hidden exists below. */
+.waking-overlay.hidden {
+  display: none;
 }
 
 .waking-overlay-card {

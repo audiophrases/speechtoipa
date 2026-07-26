@@ -344,9 +344,21 @@ async function cacheTts(cacheKey, blob, originalText) {
 
 async function fetchTtsAudio(text, langCode) {
   // Don't race ahead of detectTtsServer(): a click right after page load
-  // should wait for (and, if slow, see the overlay for) the real neural
-  // server rather than briefly falling through to the Google fallback.
-  await ttsServerReadyPromise;
+  // should wait for the real neural server rather than briefly falling
+  // through to the Google fallback.
+  //
+  // This is also the ONLY place the waking overlay is raised — the user has
+  // actively asked for audio and detection hasn't finished, so the wait is
+  // real and worth explaining. Page load alone never shows it: warming up a
+  // sleeping host is background work and must stay invisible.
+  const overlayTimer = setTimeout(showWakingOverlay, WAKING_OVERLAY_DELAY_MS);
+  try {
+    await ttsServerReadyPromise;
+  } finally {
+    clearTimeout(overlayTimer);
+    hideWakingOverlay();
+  }
+
   const baseUrl = getTtsBaseUrl();
   if (!baseUrl) {
     throw new Error('TTS service not configured');
@@ -669,35 +681,33 @@ function startKeepAlive(baseUrl) {
 // file server" cases the README documents; that probe is skipped on https
 // pages since fetching a plain http:// URL from https is blocked as mixed
 // content regardless.
+// Runs silently in the background on page load: it warms a sleeping host so
+// the wait is over before anyone presses Play, and never blocks the UI on its
+// own. The overlay is driven purely by fetchTtsAudio (i.e. only when someone
+// actually asks for audio and this hasn't finished yet).
 async function detectTtsServer() {
   if (typeof window === 'undefined' || typeof fetch !== 'function') return;
   if (window.TTS_BASE_URL || window.__TTS_BASE_URL__) return;
 
-  const overlayTimer = setTimeout(showWakingOverlay, WAKING_OVERLAY_DELAY_MS);
-  try {
-    const origin = window.location?.origin;
-    const originTimeout = isLocalOrigin(origin) ? LOCAL_HEALTH_TIMEOUT_MS : STARTUP_HEALTH_TIMEOUT_MS;
-    if (origin && origin !== 'null' && (await pingHealth(origin, originTimeout))) {
-      window.TTS_BASE_URL = origin;
-      state.supportsTtsService = true;
-      updateSpeechSynthesisState();
-      console.log('Neural TTS server detected at', origin, '(same origin)');
-      startKeepAlive(origin);
-      return;
-    }
+  const origin = window.location?.origin;
+  const originTimeout = isLocalOrigin(origin) ? LOCAL_HEALTH_TIMEOUT_MS : STARTUP_HEALTH_TIMEOUT_MS;
+  if (origin && origin !== 'null' && (await pingHealth(origin, originTimeout))) {
+    window.TTS_BASE_URL = origin;
+    state.supportsTtsService = true;
+    updateSpeechSynthesisState();
+    console.log('Neural TTS server detected at', origin, '(same origin)');
+    startKeepAlive(origin);
+    return;
+  }
 
-    const proto = window.location?.protocol;
-    if (proto !== 'http:' && proto !== 'file:') return; // avoid mixed content on https pages
+  const proto = window.location?.protocol;
+  if (proto !== 'http:' && proto !== 'file:') return; // avoid mixed content on https pages
 
-    if (await pingHealth(LOCAL_TTS_SERVER_URL, LOCAL_HEALTH_TIMEOUT_MS)) {
-      window.TTS_BASE_URL = LOCAL_TTS_SERVER_URL;
-      state.supportsTtsService = true;
-      updateSpeechSynthesisState();
-      console.log('Neural TTS server detected at', LOCAL_TTS_SERVER_URL);
-    }
-  } finally {
-    clearTimeout(overlayTimer);
-    hideWakingOverlay();
+  if (await pingHealth(LOCAL_TTS_SERVER_URL, LOCAL_HEALTH_TIMEOUT_MS)) {
+    window.TTS_BASE_URL = LOCAL_TTS_SERVER_URL;
+    state.supportsTtsService = true;
+    updateSpeechSynthesisState();
+    console.log('Neural TTS server detected at', LOCAL_TTS_SERVER_URL);
   }
 }
 

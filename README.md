@@ -33,9 +33,19 @@ npm install
 npm start   # serves the app + voices on http://127.0.0.1:8787
 ```
 
-The server also serves the app itself, so `http://127.0.0.1:8787` is all you need. If the app is instead opened over another `http://` origin or `file://`, it probes `http://127.0.0.1:8787/health` and automatically prefers the server over browser voices when found. Synthesized clips are cached on disk (`server/cache/`) and in the browser, so repeated sentences play instantly.
+The server also serves the app itself, so `http://127.0.0.1:8787` is all you need. The app always prefers whichever server is serving its own page (same origin) — this is what makes the exact same code work unmodified once deployed. If opened over a *different* `http://` origin or `file://` instead, it also probes `http://127.0.0.1:8787/health` as a secondary check. Synthesized clips are cached on disk (`server/cache/`) and in the browser, so repeated sentences play instantly.
 
-For production (an `https://` page cannot call a local `http://` server), deploy `server/` to any Node host (Render, Railway, Fly, a VPS…) and point the app at it with the meta tag:
+### Deploying for students (Render)
+
+For students who can't install anything locally (no admin rights, Chromebooks), deploy `server/` — which serves both the voices and the app itself — to Render's free tier:
+
+1. Push this repo to GitHub.
+2. In the [Render dashboard](https://dashboard.render.com): **New +** → **Blueprint** → pick the repo. Render reads [render.yaml](render.yaml) and pre-fills everything (no manual config).
+3. Share the resulting `https://….onrender.com` URL with students — that's the whole "install."
+
+No card is required on Render's free tier. It sleeps after ~15 minutes idle; the app pings `/health` on load and shows a "waking up" overlay during the ~30-60s cold start, so it doesn't look broken. While a tab stays open and visible, the app also pings periodically to keep the server from re-sleeping mid-lesson.
+
+Because the page and the neural voice API are served from the same place, **no configuration is needed** for the deployed version to get the neural voices — it detects itself automatically. The `tts-base-url` meta tag / `window.TTS_BASE_URL` override is now only needed for the advanced case of pointing this frontend at a *separately* hosted TTS server:
 
 ```html
 <meta name="tts-base-url" content="https://your-tts-server.example.com">

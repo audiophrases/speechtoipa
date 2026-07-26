@@ -1,0 +1,21 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# In the Render dashboard: New + > Blueprint > pick this repo. Render reads
+# this file and pre-fills the service below; no manual config needed.
+#
+# The server serves both the app's static files (index.html/app.js/styles.css,
+# one directory above server/) and the neural TTS + dictation-fetch APIs from
+# a single process — see server/server.js. Free tier: sleeps after ~15 min
+# idle; the app's own warm-up ping (app.js) wakes it and shows an overlay
+# while it does.
+services:
+  - type: web
+    name: speechtoipa
+    env: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.1

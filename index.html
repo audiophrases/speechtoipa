@@ -10,6 +10,15 @@
   <link rel="stylesheet" href="styles.css?v=20260716b" />
 </head>
 <body>
+  <div id="waking-overlay" class="waking-overlay hidden" role="status" aria-live="polite" aria-hidden="true">
+    <div class="waking-overlay-card">
+      <div class="waking-spinner" aria-hidden="true"></div>
+      <p class="waking-title">Waking up the voice server…</p>
+      <p class="small">The first request of the day can take up to a minute. Thanks for your patience!</p>
+      <button type="button" id="waking-dismiss" class="secondary">Continue anyway</button>
+    </div>
+  </div>
+
   <section class="settings" aria-label="Language selection">
     <div class="field">
       <label class="field-title" for="target-lang">Target language (L2):</label>

@@ -343,6 +343,10 @@ async function cacheTts(cacheKey, blob, originalText) {
 }
 
 async function fetchTtsAudio(text, langCode) {
+  // Don't race ahead of detectTtsServer(): a click right after page load
+  // should wait for (and, if slow, see the overlay for) the real neural
+  // server rather than briefly falling through to the Google fallback.
+  await ttsServerReadyPromise;
   const baseUrl = getTtsBaseUrl();
   if (!baseUrl) {
     throw new Error('TTS service not configured');
@@ -593,39 +597,120 @@ async function ensureMasterRowsForLang(lang) {
 }
 
 const LOCAL_TTS_SERVER_URL = 'http://127.0.0.1:8787';
+// Quick pings (keep-alive, secondary probes) time out fast; the very first,
+// startup probe gets a generous budget because a free-tier host (e.g. Render)
+// may need up to ~50s to wake from sleep, and that wait is exactly what the
+// waking overlay below is for.
+const HEALTH_CHECK_TIMEOUT_MS = 1500;
+const STARTUP_HEALTH_TIMEOUT_MS = 55000;
+// A local server never sleeps, so it gets a much shorter budget than a
+// free-tier host waking from sleep: if something on the machine (antivirus, a
+// browser extension) ever slows that one fetch down, this bounds the worst
+// case to a few seconds instead of nearly a minute of "waking up" overlay.
+const LOCAL_HEALTH_TIMEOUT_MS = 4000;
+// Only show the "waking up" overlay if the startup check is still pending
+// after this long — an already-warm server (or the local .bat) resolves well
+// under this, so those users never see it.
+const WAKING_OVERLAY_DELAY_MS = 900;
+const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000;
 
-// If the neural TTS server (server/) is running locally, use it automatically.
-// Only possible from http:/file: pages — https pages cannot call a local http
-// server, so production deployments set the meta tts-base-url tag instead.
-async function detectLocalTtsServer() {
-  if (typeof window === 'undefined' || typeof fetch !== 'function') return;
-  if (window.TTS_BASE_URL || window.__TTS_BASE_URL__) return;
-  const proto = window.location?.protocol;
-  if (proto !== 'http:' && proto !== 'file:') return;
+function isLocalOrigin(origin) {
+  return !origin || origin === 'null' || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin);
+}
 
+async function pingHealth(baseUrl, timeoutMs) {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1500);
-    const res = await fetch(`${LOCAL_TTS_SERVER_URL}/health`, { signal: controller.signal });
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const data = await res.json();
-    if (!data || !data.ok) return;
-
-    window.TTS_BASE_URL = LOCAL_TTS_SERVER_URL;
-    state.supportsTtsService = true;
-    updateSpeechSynthesisState();
-    console.log('Neural TTS server detected at', LOCAL_TTS_SERVER_URL);
+    return Boolean(data && data.ok);
   } catch {
-    /* no local server running — keep defaults */
+    return false;
   }
 }
+
+function showWakingOverlay() {
+  if (els.wakingOverlay) {
+    els.wakingOverlay.classList.remove('hidden');
+    els.wakingOverlay.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function hideWakingOverlay() {
+  if (els.wakingOverlay) {
+    els.wakingOverlay.classList.add('hidden');
+    els.wakingOverlay.setAttribute('aria-hidden', 'true');
+  }
+}
+
+// Periodically pings the deployed server so it doesn't idle back to sleep
+// mid-lesson (Render's free tier sleeps after ~15 min with no traffic). Only
+// meaningful for an actual remote deployment — the local .bat server never
+// sleeps, so there is nothing to keep warm there.
+function startKeepAlive(baseUrl) {
+  if (isLocalOrigin(baseUrl)) return;
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      pingHealth(baseUrl, HEALTH_CHECK_TIMEOUT_MS);
+    }
+  }, KEEP_ALIVE_INTERVAL_MS);
+}
+
+// Prefer whichever server is actually serving this page. That one rule
+// covers both homes the neural server can run in with no configuration:
+// locally, speechtoipa.bat opens the page AT the server
+// (http://127.0.0.1:8787), and once deployed, the page and the /tts API are
+// served from the same host (e.g. Render) — so "same origin" always finds
+// the neural server when one is present. Only falls back to probing the
+// well-known local port for the file:// / "opened via an unrelated static
+// file server" cases the README documents; that probe is skipped on https
+// pages since fetching a plain http:// URL from https is blocked as mixed
+// content regardless.
+async function detectTtsServer() {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+  if (window.TTS_BASE_URL || window.__TTS_BASE_URL__) return;
+
+  const overlayTimer = setTimeout(showWakingOverlay, WAKING_OVERLAY_DELAY_MS);
+  try {
+    const origin = window.location?.origin;
+    const originTimeout = isLocalOrigin(origin) ? LOCAL_HEALTH_TIMEOUT_MS : STARTUP_HEALTH_TIMEOUT_MS;
+    if (origin && origin !== 'null' && (await pingHealth(origin, originTimeout))) {
+      window.TTS_BASE_URL = origin;
+      state.supportsTtsService = true;
+      updateSpeechSynthesisState();
+      console.log('Neural TTS server detected at', origin, '(same origin)');
+      startKeepAlive(origin);
+      return;
+    }
+
+    const proto = window.location?.protocol;
+    if (proto !== 'http:' && proto !== 'file:') return; // avoid mixed content on https pages
+
+    if (await pingHealth(LOCAL_TTS_SERVER_URL, LOCAL_HEALTH_TIMEOUT_MS)) {
+      window.TTS_BASE_URL = LOCAL_TTS_SERVER_URL;
+      state.supportsTtsService = true;
+      updateSpeechSynthesisState();
+      console.log('Neural TTS server detected at', LOCAL_TTS_SERVER_URL);
+    }
+  } finally {
+    clearTimeout(overlayTimer);
+    hideWakingOverlay();
+  }
+}
+
+// Any code that's about to make a TTS request awaits this so it never races
+// ahead of server detection with a premature (e.g. Google fallback) URL —
+// see fetchTtsAudio.
+let ttsServerReadyPromise = Promise.resolve();
 
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', async () => {
     cacheElements();
     createTooltips();
-    detectLocalTtsServer();
+    ttsServerReadyPromise = detectTtsServer();
     updateSpeechSynthesisState();
     hydrateSelections();
     attachEventListeners();
@@ -665,6 +750,8 @@ function cacheElements() {
   els.fetchStatus = document.getElementById('fetch-status');
   els.fetchCitation = document.getElementById('fetch-citation');
   els.fetchButtons = Array.from(document.querySelectorAll('[data-fetch-length]'));
+  els.wakingOverlay = document.getElementById('waking-overlay');
+  els.wakingDismiss = document.getElementById('waking-dismiss');
 
   // UI debug removed: don't display TTS base URL.
 }
@@ -914,6 +1001,15 @@ function attachEventListeners() {
       fetchPassage(btn.dataset.fetchLength);
     });
   });
+
+  // The overlay is purely informational, so it must never be able to trap
+  // someone if detection itself misbehaves.
+  if (els.wakingDismiss) {
+    els.wakingDismiss.addEventListener('click', (e) => {
+      e.preventDefault();
+      hideWakingOverlay();
+    });
+  }
 
   (els.customDismissButtons || []).forEach((btn) => {
     btn.addEventListener('click', () => closeCustomModal(true));

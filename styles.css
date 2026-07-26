@@ -202,6 +202,46 @@ textarea {
   display: none;
 }
 
+.waking-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(2px);
+}
+
+.waking-overlay-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 2rem;
+  max-width: min(360px, 90vw);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.waking-title {
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+}
+
+.waking-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: waking-spin 0.9s linear infinite;
+}
+
+@keyframes waking-spin {
+  to { transform: rotate(360deg); }
+}
+
 .modal {
   position: fixed;
   inset: 0;

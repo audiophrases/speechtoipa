@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Assignments · Speech to IPA</title>
+  <link rel="stylesheet" href="../styles.css?v=20260728a" />
+  <link rel="stylesheet" href="create.css?v=20260728a" />
+</head>
+<body class="teacher">
+  <header>
+    <h1>Reading assignments</h1>
+    <p class="tagline">Speech to IPA · set a lesson, see who has read it</p>
+  </header>
+
+  <!-- Sign in. One password for both apps; held in memory only, so closing the
+       tab on a staffroom machine signs you out. -->
+  <section id="login" class="card teacher-card hidden">
+    <h2>Teacher sign-in</h2>
+    <form id="login-form">
+      <label for="teacher-password">Password</label>
+      <input id="teacher-password" type="password" autocomplete="current-password" required />
+      <button type="submit" id="login-submit">Sign in</button>
+    </form>
+    <p id="login-error" class="teacher-error" role="alert"></p>
+    <p class="small">The same password as Dictation Time.</p>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="dashboard" class="hidden">
+    <div class="teacher-toolbar">
+      <h2>Your assignments</h2>
+      <button type="button" id="new-assignment">New assignment</button>
+    </div>
+    <p id="dashboard-status" class="status"></p>
+    <div id="assignment-list" class="teacher-list"></div>
+  </section>
+
+  <!-- Create -->
+  <section id="create" class="card teacher-card hidden">
+    <h2>New reading assignment</h2>
+    <form id="create-form">
+      <div class="teacher-grid">
+        <div class="field">
+          <label for="create-title">Title</label>
+          <input id="create-title" required placeholder="e.g. A1 introductions" />
+        </div>
+        <div class="field">
+          <label for="create-class">Class</label>
+          <input id="create-class" placeholder="e.g. 1ESO A" />
+        </div>
+        <div class="field">
+          <label for="create-lang">Language</label>
+          <select id="create-lang"></select>
+        </div>
+        <div class="field">
+          <label for="create-lesson">Lesson</label>
+          <select id="create-lesson"></select>
+        </div>
+        <div class="field">
+          <label for="create-due">Due (optional)</label>
+          <input id="create-due" type="datetime-local" />
+        </div>
+        <div class="field">
+          <label for="create-accuracy">Accuracy required</label>
+          <select id="create-accuracy">
+            <option value="0">50% — most forgiving</option>
+            <option value="1">60%</option>
+            <option value="2">70%</option>
+            <option value="3">80%</option>
+            <option value="4">90%</option>
+            <option value="5">100% — exact</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="create-attempts">Attempts allowed</label>
+          <select id="create-attempts">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="0">Unlimited</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="create-feedback">Show the score at the end?</label>
+          <select id="create-feedback">
+            <option value="end">Yes</option>
+            <option value="none">No — hand in only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field teacher-sentences">
+        <label for="create-text">Sentences — one per line</label>
+        <textarea id="create-text" rows="8" required
+          placeholder="Pick a lesson above, or type your own sentences here — one per line."></textarea>
+        <p class="small" id="create-count"></p>
+      </div>
+
+      <p id="create-error" class="teacher-error" role="alert"></p>
+      <div class="teacher-actions">
+        <button type="submit" id="create-submit">Create assignment</button>
+        <button type="button" class="secondary" data-back>Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Created: the code and the link to hand out -->
+  <section id="created" class="card teacher-card hidden">
+    <h2>Assignment ready</h2>
+    <p class="teacher-code" id="created-code"></p>
+    <label for="created-link">Link for students</label>
+    <input id="created-link" readonly />
+    <div class="teacher-actions">
+      <button type="button" id="copy-link">Copy link</button>
+      <button type="button" class="secondary" data-back>Done</button>
+    </div>
+  </section>
+
+  <!-- One assignment: who has read it -->
+  <section id="detail" class="hidden">
+    <div class="teacher-toolbar">
+      <h2 id="detail-title">Assignment</h2>
+      <button type="button" class="secondary" data-back>Back</button>
+    </div>
+    <p id="detail-meta" class="small"></p>
+    <label for="detail-link">Link for students</label>
+    <input id="detail-link" readonly />
+    <div class="teacher-actions">
+      <button type="button" id="detail-copy">Copy link</button>
+      <button type="button" class="secondary" id="detail-archive">Close assignment</button>
+      <button type="button" class="secondary" id="detail-delete">Delete</button>
+    </div>
+    <h3>Sentences</h3>
+    <ol id="detail-sentences" class="teacher-sentence-list"></ol>
+    <h3>Attempts</h3>
+    <div id="detail-attempts" class="teacher-list"></div>
+  </section>
+
+  <!-- One student's reading, sentence by sentence -->
+  <section id="attempt" class="hidden">
+    <div class="teacher-toolbar">
+      <h2 id="attempt-title">Attempt</h2>
+      <button type="button" class="secondary" data-back>Back</button>
+    </div>
+    <p id="attempt-meta" class="small"></p>
+    <div id="attempt-sentences"></div>
+  </section>
+
+  <script src="../lessons.js?v=20260728a"></script>
+  <script src="../assignments.js?v=20260728a"></script>
+  <script src="create.js?v=20260728a"></script>
+</body>
+</html>

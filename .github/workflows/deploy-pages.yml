@@ -1,0 +1,54 @@
+# Publishes the app to GitHub Pages, which is where students open it.
+#
+# Pages is a static host with no cold start, so an assignment link opens
+# instantly — unlike the Render address, which spends ~30-60s waking up if
+# nobody has used it for a quarter of an hour. The voices still come from
+# Render (detectTtsServer in app.js finds it by absolute URL) and assignments
+# from the Cloudflare Worker; both answer cross-origin.
+#
+# There is no build step: the app is plain HTML/CSS/JS, so this copies the
+# files students need and nothing else — the Node server, its dependencies and
+# the debug logs stay behind.
+#
+# One-time setup: repo Settings > Pages > Source = "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; queue instead, and let a newer one wait rather
+# than cancel, so a push is never silently dropped.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect the static app
+        run: |
+          mkdir -p dist/create
+          cp index.html app.js assignments.js lessons.js styles.css dist/
+          cp create/index.html create/create.js create/create.css dist/create/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

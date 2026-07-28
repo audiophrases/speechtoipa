@@ -7,7 +7,7 @@
   <!-- Optional: override the TTS fallback service base URL -->
   <!-- <meta name="tts-base-url" content="https://your-tts-service.example.com" /> -->
   <title>Speech to IPA</title>
-  <link rel="stylesheet" href="styles.css?v=20260726b" />
+  <link rel="stylesheet" href="styles.css?v=20260728a" />
 </head>
 <body>
   <div id="waking-overlay" class="waking-overlay hidden" role="status" aria-live="polite" aria-hidden="true">
@@ -18,6 +18,47 @@
       <button type="button" id="waking-dismiss" class="secondary">Continue anyway</button>
     </div>
   </div>
+
+  <!-- Assignment sign-in. Covers the app until the student is in, so an
+       assignment link can never be practised anonymously. Hidden (and never
+       populated) during ordinary free practice. -->
+  <div id="gate" class="gate hidden" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+    <div class="gate-card">
+      <p class="gate-eyebrow" id="gate-eyebrow">Assignment</p>
+      <h1 class="gate-title" id="gate-title">Loading…</h1>
+      <p class="gate-meta" id="gate-meta"></p>
+
+      <form id="gate-form" class="gate-form hidden">
+        <label for="gate-username">Username</label>
+        <input id="gate-username" name="username" autocomplete="username" autocapitalize="none"
+               autocorrect="off" spellcheck="false" required />
+
+        <label for="gate-password">Password</label>
+        <input id="gate-password" name="password" type="password"
+               autocomplete="current-password" required />
+
+        <button type="submit" id="gate-submit">Start</button>
+        <p class="gate-hint">Use the same username and password as PinPlay.</p>
+      </form>
+
+      <p id="gate-error" class="gate-error" role="alert"></p>
+
+      <p class="gate-links">
+        <a id="gate-signup" href="#" target="_blank" rel="noopener">Sign up</a>
+        <a id="gate-lookup" href="#" target="_blank" rel="noopener">Forgot username/password</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- Replaces the settings bar while an assignment is being read: the
+       language, lesson and accuracy are the teacher's, not the student's. -->
+  <section id="assignment-bar" class="assignment-bar hidden" aria-label="Assignment">
+    <div class="assignment-bar-main">
+      <p class="assignment-bar-title" id="assignment-title"></p>
+      <p class="assignment-bar-meta" id="assignment-progress"></p>
+    </div>
+    <button type="button" id="hand-in-btn">Hand in</button>
+  </section>
 
   <section class="settings" aria-label="Language selection">
     <div class="field">
@@ -95,6 +136,8 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260726b"></script>
+  <script src="lessons.js?v=20260728a"></script>
+  <script src="assignments.js?v=20260728a"></script>
+  <script src="app.js?v=20260728a"></script>
 </body>
 </html>

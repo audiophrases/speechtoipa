@@ -7,6 +7,12 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { handleDictationRequest } from './dictation.js';
 
 const PORT = Number(process.env.PORT) || 8787;
+// Set on the Render deploy to send anyone opening the Render address itself on
+// to the GitHub Pages one, which has no cold start. Only page views are
+// redirected — /health, /tts and /api/* keep answering normally, because the
+// Pages copy depends on exactly those. Unset locally, where this server IS the
+// app.
+const ROOT_REDIRECT_URL = process.env.ROOT_REDIRECT_URL || '';
 const MAX_TEXT_LENGTH = 500;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(SERVER_DIR, 'cache');
@@ -139,7 +145,22 @@ function serveStatic(pathname, res) {
     sendJson(res, 400, { error: 'Bad request' });
     return;
   }
-  if (decoded === '/') decoded = '/index.html';
+  // Any directory serves its index.html — '/' for the app, '/create/' for the
+  // teacher page. Without this the teacher page is only reachable by its full
+  // filename, which is not the URL anyone is given.
+  if (decoded.endsWith('/')) decoded += 'index.html';
+
+  // '/create' means '/create/'. Redirecting rather than serving it directly
+  // matters: at '/create' the browser resolves '../styles.css' against the
+  // root, and the page would load with no styling and no scripts.
+  if (!path.extname(decoded)) {
+    const asDirectory = `${decoded}/index.html`;
+    if (fs.existsSync(path.join(APP_ROOT, asDirectory))) {
+      res.writeHead(301, { Location: `${decoded}/` });
+      res.end();
+      return;
+    }
+  }
 
   const filePath = path.normalize(path.join(APP_ROOT, decoded));
   const insideRoot = filePath.startsWith(APP_ROOT + path.sep) || filePath === path.join(APP_ROOT, 'index.html');
@@ -204,6 +225,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname !== '/tts') {
+    // A bookmark of the old Render address lands here; send it to the fast
+    // home, keeping the assignment code so a student's link still works.
+    if (ROOT_REDIRECT_URL && url.pathname === '/') {
+      res.writeHead(302, { Location: ROOT_REDIRECT_URL + (url.search || '') });
+      res.end();
+      return;
+    }
     serveStatic(url.pathname, res);
     return;
   }

@@ -35,15 +35,9 @@ const PROPER_NOUN_AUTO_CREDIT_FLOOR = 0.2;
 const CEFR_LEVELS = [50, 60, 70, 80, 90, 100];
 const DEFAULT_CEFR_INDEX = 0;
 
-const MASTER_CSV_URLS = {
-  ca: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1216373156&single=true&output=csv',
-  en: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1053057720&single=true&output=csv',
-  fr: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=484976070&single=true&output=csv',
-  it: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=1338439854&single=true&output=csv',
-  ma: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQl1GNJGHAilkpQn3KiB0HnrUGEXSQp_dwo6A548izQXL-iAtAIHB2g3_o6VYAOv6UFuUOcISzJQO61/pub?gid=710375040&single=true&output=csv',
-};
-
-const MASTER_ROWS_BY_LANG = {};
+// MASTER_CSV_URLS, MASTER_ROWS_BY_LANG, parseCourseCsv and
+// ensureMasterRowsForLang live in lessons.js, which both this app and the
+// teacher page load.
 const TRANSLATION_LANG_CODES = ['ca', 'es', 'en', 'fr', 'it', 'ma'];
 const DARJA_TRANSCRIPTION_HEADER = 'ma_latn';
 const DARJA_TRANSCRIPTION_FALLBACK_HEADERS = [
@@ -199,6 +193,10 @@ const state = {
   approxLevelIndex: DEFAULT_CEFR_INDEX,
   audioUnlocked: false,
   ttsAudioElement: null,
+  // Set only when the page was opened from an assignment link (?a=CODE). Null
+  // for ordinary free practice, which is the only state most of this file ever
+  // sees — see the assignment section near the end.
+  assignment: null,
 };
 
 const els = {};
@@ -476,73 +474,6 @@ async function unlockAudioPlayback() {
   }
 }
 
-function parseCourseCsv(text) {
-  const rows = [];
-  let current = '';
-  let inQuotes = false;
-  let row = [];
-
-  const pushCell = () => {
-    row.push(current);
-    current = '';
-  };
-  const pushRow = () => {
-    if (row.length) {
-      rows.push(row.map((cell) => cell.replace(/^"|"$/g, '')));
-      row = [];
-    }
-  };
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const next = text[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      pushCell();
-    } else if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') {
-        i++;
-      }
-      pushCell();
-      pushRow();
-    } else {
-      current += char;
-    }
-  }
-
-  if (current.length || row.length) {
-    pushCell();
-    pushRow();
-  }
-
-  if (!rows.length) return [];
-
-  const headers = rows[0].map((h) => h.trim());
-  return rows
-    .slice(1)
-    .filter((cells) => cells.some((c) => c && c.trim().length))
-    .map((cells) => {
-      const obj = {};
-      headers.forEach((h, idx) => {
-        obj[h] = (cells[idx] || '').trim();
-      });
-      if (obj.pronunciation_aliases) {
-        obj.pronunciation_aliases = obj.pronunciation_aliases
-          .split('|')
-          .map((alias) => alias.trim())
-          .filter(Boolean);
-      }
-      return obj;
-    });
-}
-
 function getDarijaTranscription(row) {
   if (!row) return '';
   if (row[DARJA_TRANSCRIPTION_HEADER]) return row[DARJA_TRANSCRIPTION_HEADER];
@@ -587,25 +518,6 @@ function inferProperNounFromTokenRow(row) {
 function isLikelyProperNoun(rawWord, indexInSentence) {
   if (!rawWord || indexInSentence <= 0) return false;
   return /\p{Lu}/u.test(rawWord);
-}
-
-async function ensureMasterRowsForLang(lang) {
-  if (MASTER_ROWS_BY_LANG[lang]) return MASTER_ROWS_BY_LANG[lang];
-
-  const url = MASTER_CSV_URLS[lang];
-  if (!url) return null;
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.error('Failed to fetch master CSV for', lang, res.status);
-    return null;
-  }
-  const text = await res.text();
-  const rows = parseCourseCsv(text);
-  MASTER_ROWS_BY_LANG[lang] = rows;
-
-  console.log('Loaded master rows for', lang, 'count =', rows.length);
-  return rows;
 }
 
 const LOCAL_TTS_SERVER_URL = 'http://127.0.0.1:8787';
@@ -701,6 +613,30 @@ async function detectTtsServer() {
   }
 
   const proto = window.location?.protocol;
+
+  // An https page whose own origin has no /health is a static host — GitHub
+  // Pages — which has no APIs of its own. The neural voices live on Render
+  // instead, and an absolute URL is the only way a statically hosted page gets
+  // them at all; without this the app would silently drop to the Google
+  // Translate fallback, which sounds markedly worse.
+  //
+  // Only on https, and only after the same-origin probe has failed: on http or
+  // file:// the local server below is both nearer and likelier, and must not be
+  // made to wait behind a sleeping Render.
+  const remote = window.Assignments ? window.Assignments.renderBase() : '';
+  if (proto === 'https:' && remote && remote !== origin) {
+    // Generous, because this is exactly when Render is likely asleep: waking it
+    // takes ~30-60s, and the overlay already exists to explain the wait.
+    if (await pingHealth(remote, STARTUP_HEALTH_TIMEOUT_MS)) {
+      window.TTS_BASE_URL = remote;
+      state.supportsTtsService = true;
+      updateSpeechSynthesisState();
+      console.log('Neural TTS server detected at', remote, '(remote)');
+      startKeepAlive(remote);
+      return;
+    }
+  }
+
   if (proto !== 'http:' && proto !== 'file:') return; // avoid mixed content on https pages
 
   if (await pingHealth(LOCAL_TTS_SERVER_URL, LOCAL_HEALTH_TIMEOUT_MS)) {
@@ -726,11 +662,32 @@ if (typeof document !== 'undefined') {
     attachEventListeners();
     hydrateFromStorage();
     buildVoiceMap();
+
+    // An assignment link brings its own language, lesson and settings, so it
+    // skips the whole free-practice startup rather than loading a lesson the
+    // student is then not allowed to read.
+    const assignmentCode = codeFromUrl();
+    if (assignmentCode) {
+      await openAssignment(assignmentCode);
+      return;
+    }
+
     await loadLessonManifest();
     updateLessonId();
     await loadLesson();
     warnIfArabicVoiceMissing();
   });
+}
+
+// Reading the code straight from the URL rather than via Assignments, because
+// this runs before anything has checked that assignments.js loaded at all.
+function codeFromUrl() {
+  try {
+    const raw = new URLSearchParams(location.search).get('a') || '';
+    return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  } catch (err) {
+    return '';
+  }
 }
 
 function cacheElements() {
@@ -762,6 +719,22 @@ function cacheElements() {
   els.fetchButtons = Array.from(document.querySelectorAll('[data-fetch-length]'));
   els.wakingOverlay = document.getElementById('waking-overlay');
   els.wakingDismiss = document.getElementById('waking-dismiss');
+  els.settingsBar = document.querySelector('.settings');
+  els.gate = document.getElementById('gate');
+  els.gateTitle = document.getElementById('gate-title');
+  els.gateEyebrow = document.getElementById('gate-eyebrow');
+  els.gateMeta = document.getElementById('gate-meta');
+  els.gateForm = document.getElementById('gate-form');
+  els.gateUsername = document.getElementById('gate-username');
+  els.gatePassword = document.getElementById('gate-password');
+  els.gateSubmit = document.getElementById('gate-submit');
+  els.gateError = document.getElementById('gate-error');
+  els.gateSignup = document.getElementById('gate-signup');
+  els.gateLookup = document.getElementById('gate-lookup');
+  els.assignmentBar = document.getElementById('assignment-bar');
+  els.assignmentTitle = document.getElementById('assignment-title');
+  els.assignmentProgress = document.getElementById('assignment-progress');
+  els.handIn = document.getElementById('hand-in-btn');
 
   // UI debug removed: don't display TTS base URL.
 }
@@ -1271,7 +1244,10 @@ function normalizeLegacyCodes(saved) {
 }
 
 function saveProgress(bestScore) {
-  if (state.mode === 'custom') return;
+  // Assignment work is the worker's business, not localStorage's — and its
+  // lessonId is the teacher's, so writing it here would corrupt the student's
+  // own free-practice progress for that lesson.
+  if (state.mode === 'custom' || state.mode === 'assignment') return;
   const data = readStoredProgressData();
   data.targetLang = state.targetLang;
   data.baseLang = state.baseLang;
@@ -1327,6 +1303,32 @@ async function loadLesson() {
     return;
   }
 
+  const sentences = buildLessonSentences(lessonRows, lessonId, lang);
+
+  state.sentences = sentences;
+  const saved = loadProgressForLesson();
+  state.currentIndex = saved?.currentIndex || 0;
+
+  renderCurrentSentence();
+  const lessonMeta = availableLessons.find((l) => l.id === lessonId) || {};
+  updateSpeechSynthesisState();
+  const ttsNotice = state.supportsSpeechSynthesis ? '' : ` • ${NO_TTS_SUPPORT_MESSAGE}`;
+  setStatus(
+    `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}${ttsNotice}`
+  );
+  playbackQueue.warmVoicesForLang(getLangCode(state.targetLang));
+}
+
+// Turns a lesson's raw sheet rows into the sentence objects the app practises
+// against: text, translations, and the per-token metadata (surface,
+// transcription, aliases, proper-noun flag) that word highlighting, tooltips
+// and — for Darija — the entire scoring backbone depend on.
+//
+// Extracted from loadLesson so an assignment can rebuild the same objects. The
+// worker stores only the sentence texts, and reading the rest back from the
+// sheet is what stops a lesson set as an assignment from arriving stripped of
+// its tooltips and its Darija ma_latn matching. See hydrateAssignmentSentences.
+function buildLessonSentences(lessonRows, lessonId, lang) {
   // Group by sentence_id and preserve sentence order by first occurrence
   const bySentence = {};
   const sentenceOrder = [];
@@ -1343,7 +1345,7 @@ async function loadLesson() {
 
   const l2Col = lang;
 
-  const sentences = sentenceOrder.map((sid, index) => {
+  return sentenceOrder.map((sid, index) => {
     const group = bySentence[sid];
     const sentenceRow = group.find((r) => !r.token_id); // token_id empty = sentence row
     const tokenRows = group.filter((r) => r.token_id);
@@ -1402,19 +1404,6 @@ async function loadLesson() {
       tokens,
     };
   });
-
-  state.sentences = sentences;
-  const saved = loadProgressForLesson();
-  state.currentIndex = saved?.currentIndex || 0;
-
-  renderCurrentSentence();
-  const lessonMeta = availableLessons.find((l) => l.id === lessonId) || {};
-  updateSpeechSynthesisState();
-  const ttsNotice = state.supportsSpeechSynthesis ? '' : ` • ${NO_TTS_SUPPORT_MESSAGE}`;
-  setStatus(
-    `Loaded ${lessonMeta.lang?.toUpperCase() || ''} • ${lessonMeta.label || lessonId}${ttsNotice}`
-  );
-  playbackQueue.warmVoicesForLang(getLangCode(state.targetLang));
 }
 
 function loadProgressForLesson() {
@@ -1694,6 +1683,8 @@ function renderCurrentSentence() {
     state.mode === 'custom' && total <= 1
       ? 'Custom sentence practice'
       : `Sentence ${state.currentIndex + 1} / ${total}`;
+
+  if (state.mode === 'assignment') updateAssignmentProgress();
 }
 
 function currentSentence() {
@@ -4036,11 +4027,402 @@ function finalizeScore(transcript) {
 
   feedbackEl.textContent = '';
 
+  // The recognizer is the only judge of what was actually said, so in an
+  // assignment this number — and the words behind it — is what gets reported.
+  if (state.mode === 'assignment') {
+    reportAssignmentSentence(state.currentIndex, score, filteredTranscript);
+    return;
+  }
+
   saveProgress(score);
 }
 
 function setStatus(text) {
   els.status.textContent = text;
+}
+
+// ---------------------------------------------------------------- assignments
+//
+// Everything below runs only when the page was opened from an assignment link
+// (?a=CODE). Free practice never touches it, and the app behaves exactly as it
+// always did without it.
+//
+// Reading aloud has no secret to keep — the text IS the task, so it arrives
+// with the sign-in — but the marking does: the browser's recognizer is the only
+// thing that can judge a spoken sentence, so scores are computed here and
+// reported to the worker rather than recomputed there. What the worker enforces
+// instead is that a mark can only ever go UP: a student's best reading of a
+// sentence stands, and a later worse take can't undo it.
+
+function assignmentApi() {
+  return typeof window !== 'undefined' ? window.Assignments : null;
+}
+
+function setGateError(message) {
+  if (els.gateError) els.gateError.textContent = message || '';
+}
+
+function showGate() {
+  if (!els.gate) return;
+  els.gate.classList.remove('hidden');
+  document.body.classList.add('gated');
+}
+
+function hideGate() {
+  if (!els.gate) return;
+  els.gate.classList.add('hidden');
+  document.body.classList.remove('gated');
+}
+
+function formatDueDate(dueAt) {
+  if (!dueAt) return '';
+  try {
+    return new Date(dueAt).toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch (err) {
+    return '';
+  }
+}
+
+/** Loads the assignment's public details and puts the sign-in box on screen. */
+async function openAssignment(code) {
+  const api = assignmentApi();
+  showGate();
+
+  if (!api) {
+    els.gateTitle.textContent = 'Assignments are unavailable';
+    setGateError('This copy of the app cannot open assignment links.');
+    return;
+  }
+
+  // The links are the student's own escape hatches, so they go up before the
+  // network is involved at all — they must work even if the worker is down.
+  if (els.gateSignup) {
+    if (api.STUDENT_SIGNUP_URL) els.gateSignup.href = api.STUDENT_SIGNUP_URL;
+    else els.gateSignup.classList.add('hidden');
+  }
+  if (els.gateLookup) {
+    if (api.STUDENT_LOGIN_LOOKUP_URL) els.gateLookup.href = api.STUDENT_LOGIN_LOOKUP_URL;
+    else els.gateLookup.classList.add('hidden');
+  }
+
+  let meta;
+  try {
+    const data = await api.getMeta(code);
+    meta = data.meta;
+  } catch (err) {
+    els.gateTitle.textContent = 'This assignment could not be opened';
+    setGateError(err.message || 'Please check the link with your teacher.');
+    return;
+  }
+
+  if (meta.app !== 'ipa') {
+    els.gateTitle.textContent = 'Wrong app for this link';
+    setGateError('That code belongs to a dictation assignment. Open it in Dictation Time instead.');
+    return;
+  }
+
+  state.assignment = { code: code, meta: meta, attemptId: '', scores: {}, answers: {} };
+
+  els.gateTitle.textContent = meta.title || 'Reading practice';
+  const bits = [];
+  if (meta.className) bits.push(meta.className);
+  bits.push(meta.sentenceCount + (meta.sentenceCount === 1 ? ' sentence' : ' sentences'));
+  if (meta.dueAt) bits.push('due ' + formatDueDate(meta.dueAt));
+  els.gateMeta.textContent = bits.join(' • ');
+
+  // Say so before the password, not after it. The worker refuses these too —
+  // it has to, since nothing here can be trusted — but finding out only once
+  // you have typed your login is a horrible way to learn you were too late.
+  if (meta.status !== 'active') {
+    setGateError('This assignment is closed. Ask your teacher to reopen it.');
+    return;
+  }
+  if (meta.dueAt && Date.now() > meta.dueAt) {
+    setGateError('This assignment closed on ' + formatDueDate(meta.dueAt) + '.');
+    return;
+  }
+
+  els.gateForm.classList.remove('hidden');
+
+  // A student who was already part-way through gets their name filled in, so
+  // resuming on the same Chromebook is one password away.
+  const saved = api.recallAttempt(code);
+  if (saved && saved.username && els.gateUsername) {
+    els.gateUsername.value = saved.username;
+    if (els.gatePassword) els.gatePassword.focus();
+  } else if (els.gateUsername) {
+    els.gateUsername.focus();
+  }
+
+  els.gateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await signInToAssignment(code);
+  });
+}
+
+async function signInToAssignment(code) {
+  const api = assignmentApi();
+  const username = (els.gateUsername.value || '').trim();
+  const password = els.gatePassword.value || '';
+  if (!username || !password) return;
+
+  setGateError('');
+  els.gateSubmit.disabled = true;
+  els.gateSubmit.textContent = 'Signing in…';
+
+  let data;
+  try {
+    data = await api.startAttempt(code, username, password);
+  } catch (err) {
+    setGateError(err.message || 'Could not sign in. Please try again.');
+    els.gateSubmit.disabled = false;
+    els.gateSubmit.textContent = 'Start';
+    return;
+  }
+
+  api.rememberAttempt(code, data.attemptId, username);
+  els.gateSubmit.textContent = 'Loading the sentences…';
+
+  try {
+    await enterAssignmentMode(code, data);
+  } catch (err) {
+    setGateError(err.message || 'Could not load the sentences. Please try again.');
+    els.gateSubmit.disabled = false;
+    els.gateSubmit.textContent = 'Start';
+    return;
+  }
+
+  hideGate();
+}
+
+/**
+ * Rebuilds the rich sentence objects for an assignment.
+ *
+ * The worker stores plain text — that is all a dictation needs — but this app
+ * practises against per-token data from the lesson sheet: translations for the
+ * tooltips, pronunciation aliases, proper-noun flags, and for Darija the
+ * ma_latn transcriptions that ARE the scoring backbone. Without them a Darija
+ * assignment would be marked against Arabic script the recognizer never
+ * returns, and would score near zero however well it was read.
+ *
+ * So when the assignment came from a lesson, its rows are fetched from the same
+ * public sheet free practice uses and matched back by text. Anything unmatched
+ * (custom text, or an edited lesson line) falls back to a plain sentence, which
+ * is exactly how pasted custom text already behaves.
+ */
+async function hydrateAssignmentSentences(texts, meta, source) {
+  const lang = meta.lang || 'en';
+  const plain = texts.map((text, index) => ({
+    id: 'assignment_' + (index + 1),
+    unit: null,
+    theme: meta.title || 'Assignment',
+    title: meta.title || 'Assignment',
+    sentenceNumber: index + 1,
+    text: text,
+    translations: {},
+    transcriptions: {},
+    tokens: [],
+  }));
+
+  if (!source || !source.lessonId) return plain;
+
+  let lessonSentences = [];
+  try {
+    const rows = await ensureMasterRowsForLang(lang);
+    const lessonRows = (rows || []).filter((r) => r.lesson_id === source.lessonId);
+    if (lessonRows.length) lessonSentences = buildLessonSentences(lessonRows, source.lessonId, lang);
+  } catch (err) {
+    console.warn('Could not load lesson data for this assignment', err);
+    return plain;
+  }
+
+  const byText = new Map();
+  lessonSentences.forEach((sentence) => {
+    const key = String(sentence.text || '').replace(/\s+/g, ' ').trim();
+    if (key && !byText.has(key)) byText.set(key, sentence);
+  });
+
+  return plain.map((fallback, index) => {
+    const match = byText.get(String(texts[index] || '').replace(/\s+/g, ' ').trim());
+    if (!match) return fallback;
+    // The assignment's order wins over the lesson's: the teacher may have
+    // reordered or dropped lines.
+    return Object.assign({}, match, { sentenceNumber: index + 1 });
+  });
+}
+
+async function enterAssignmentMode(code, data) {
+  const api = assignmentApi();
+  const meta = data.meta;
+  const texts = Array.isArray(data.sentences) ? data.sentences : [];
+
+  state.assignment = {
+    code: code,
+    meta: meta,
+    attemptId: data.attemptId,
+    scores: Object.assign({}, data.scores || {}),
+    answers: Object.assign({}, data.answers || {}),
+    submitting: false,
+  };
+
+  // The teacher's settings, not the student's: the language is the lesson's and
+  // the accuracy threshold is pinned so a whole class is judged alike.
+  state.targetLang = meta.lang || state.targetLang;
+  if (typeof meta.accuracyIndex === 'number') {
+    setApproxLevel(meta.accuracyIndex, { persist: false });
+  }
+
+  state.sentences = await hydrateAssignmentSentences(texts, meta, meta.source || data.source);
+  state.mode = 'assignment';
+  state.lessonId = 'assignment_' + code;
+  // Resume where the work stopped, but never past the end.
+  state.currentIndex = Math.min(
+    Number(data.nextIndex) || 0,
+    Math.max(0, state.sentences.length - 1)
+  );
+
+  if (els.settingsBar) els.settingsBar.classList.add('hidden');
+  if (els.assignmentBar) els.assignmentBar.classList.remove('hidden');
+  if (els.assignmentTitle) {
+    els.assignmentTitle.textContent = meta.title || 'Reading practice';
+  }
+
+  els.handIn.addEventListener('click', handInAssignment);
+
+  initRecognition();
+  buildVoiceMap();
+  renderCurrentSentence();
+  updateAssignmentProgress();
+  updateSpeechSynthesisState();
+  playbackQueue.warmVoicesForLang(getLangCode(state.targetLang));
+
+  if (api && meta.attemptsLimit) {
+    // Said once, plainly, before they start: an attempt that is handed in
+    // cannot be reopened.
+    setStatus(
+      data.resumed
+        ? 'Welcome back — carry on where you left off.'
+        : 'Read each sentence aloud, then hand in when you are done.'
+    );
+  }
+}
+
+function assignmentSentenceCount() {
+  return state.assignment ? state.assignment.meta.sentenceCount : 0;
+}
+
+function assignmentReadCount() {
+  if (!state.assignment) return 0;
+  return Object.keys(state.assignment.scores).length;
+}
+
+function updateAssignmentProgress() {
+  if (!state.assignment || !els.assignmentProgress) return;
+  const total = assignmentSentenceCount();
+  const read = assignmentReadCount();
+  const current = state.currentIndex + 1;
+  els.assignmentProgress.textContent =
+    'Sentence ' + current + ' of ' + total + ' • ' + read + ' of ' + total + ' read';
+  els.handIn.textContent = read >= total ? 'Hand in' : 'Hand in early';
+}
+
+/**
+ * Sends one sentence's mark as soon as it is earned, rather than only at
+ * hand-in: a Chromebook that dies mid-lesson should cost the student nothing.
+ * Fire-and-forget by design — a failed report is re-sent in the hand-in
+ * payload, so there is nothing here worth blocking a reader for.
+ */
+function reportAssignmentSentence(index, score, transcript) {
+  const api = assignmentApi();
+  const assignment = state.assignment;
+  if (!api || !assignment || !assignment.attemptId) return;
+
+  const previous = Number(assignment.scores[index]);
+  if (Number.isFinite(previous) && previous >= score) {
+    updateAssignmentProgress();
+    return;
+  }
+
+  assignment.scores[index] = score;
+  assignment.answers[index] = transcript || '';
+  updateAssignmentProgress();
+
+  api
+    .reportSentence(assignment.code, assignment.attemptId, index, score, transcript || '')
+    .catch(() => {
+      // Kept locally; the hand-in re-sends every mark.
+    });
+}
+
+async function handInAssignment() {
+  const api = assignmentApi();
+  const assignment = state.assignment;
+  if (!api || !assignment || assignment.submitting) return;
+
+  const total = assignmentSentenceCount();
+  const read = assignmentReadCount();
+  const unread = total - read;
+  const warning =
+    unread > 0
+      ? 'You have not read ' +
+        unread +
+        (unread === 1 ? ' sentence' : ' sentences') +
+        ' yet, and they will be marked zero.\n\n'
+      : '';
+  if (!confirm(warning + 'Hand in your work? You cannot change it afterwards.')) return;
+
+  assignment.submitting = true;
+  els.handIn.disabled = true;
+  els.handIn.textContent = 'Handing in…';
+  stopRecording();
+
+  const scores = [];
+  const answers = [];
+  for (let i = 0; i < total; i += 1) {
+    const score = assignment.scores[i];
+    scores.push(Number.isFinite(Number(score)) ? Number(score) : null);
+    answers.push(assignment.answers[i] || '');
+  }
+
+  let result;
+  try {
+    result = await api.submitAttempt(assignment.code, assignment.attemptId, scores, answers);
+  } catch (err) {
+    assignment.submitting = false;
+    els.handIn.disabled = false;
+    els.handIn.textContent = 'Hand in';
+    setStatus(err.message || 'Could not hand in. Please check your connection and try again.');
+    return;
+  }
+
+  api.forgetAttempt(assignment.code);
+  showAssignmentDone(result);
+}
+
+function showAssignmentDone(result) {
+  const meta = state.assignment.meta;
+  hideTooltips();
+  clearPendingCoach();
+  clearNextSentenceTimer();
+
+  if (els.assignmentBar) els.assignmentBar.classList.add('hidden');
+
+  els.gateTitle.textContent = 'Handed in ✅';
+  els.gateEyebrow.textContent = meta.title || 'Reading practice';
+  els.gateMeta.textContent =
+    result && result.feedbackMode === 'end' && typeof result.scorePercent === 'number'
+      ? 'Your score: ' + result.scorePercent + '%'
+      : 'Your teacher has your work.';
+  els.gateForm.classList.add('hidden');
+  setGateError('');
+  if (els.gateSignup) els.gateSignup.classList.add('hidden');
+  if (els.gateLookup) els.gateLookup.classList.add('hidden');
+  showGate();
 }
 
 if (typeof module !== 'undefined' && module.exports) {

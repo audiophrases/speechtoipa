@@ -101,11 +101,11 @@ The server also serves the app itself, so `http://127.0.0.1:8787` is all you nee
 
 Two targets, and a push to `main` handles the first:
 
-1. **GitHub Pages** — where students open the app.
-   [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml)
-   publishes on every push. There is no build step: it copies the static files
-   students need and leaves the server, its dependencies and the debug logs
-   behind. One-time: repo **Settings → Pages → Source = GitHub Actions**.
+1. **GitHub Pages** — where students open the app, at
+   `https://audiophrases.github.io/speechtoipa/`. Pages is set to serve the
+   `main` branch root, and since the app is plain HTML/CSS/JS there is nothing
+   to build: pushing publishes it. (That is why there is no Actions workflow
+   here, unlike Dictation Time, which has a Vite build to run first.)
 2. **Render** — the voices. In the
    [Render dashboard](https://dashboard.render.com): **New +** → **Blueprint** →
    pick the repo; [render.yaml](render.yaml) pre-fills everything. No card is

@@ -19,6 +19,8 @@ const STORAGE_KEY = 'speechReadingProgress';
 const DEFAULT_LESSON_SUFFIX = 'a1_introductions';
 let availableLessons = [];
 const CUSTOM_LESSON_ID = 'custom';
+// Shared by the Slow button and its S hotkey so the two can't drift apart.
+const SLOW_PLAYBACK_RATE = 0.7;
 const DEFAULT_TTS_BASE_URL = 'https://translate.googleapis.com';
 const DEFAULT_APPROX_THRESHOLD = 0.65;
 const DEFAULT_MATCH_THRESHOLD = 0.7;
@@ -708,6 +710,7 @@ function cacheElements() {
   els.record = document.getElementById('record-btn');
   els.stop = document.getElementById('stop-btn');
   els.next = document.getElementById('next-btn');
+  els.custom = document.getElementById('custom-btn');
   els.playbackWarnings = document.getElementById('playback-warnings');
   els.status = document.getElementById('status');
   // removed: tts base url debug element (too noisy for UI)
@@ -949,10 +952,14 @@ function attachEventListeners() {
   });
 
   els.play.addEventListener('click', () => handlePlaybackClick(1));
-  els.slow.addEventListener('click', () => handlePlaybackClick(0.7));
+  els.slow.addEventListener('click', () => handlePlaybackClick(SLOW_PLAYBACK_RATE));
   els.next.addEventListener('click', () => goToNext());
   els.record.addEventListener('click', startRecording);
   els.stop.addEventListener('click', stopRecording);
+  // Always available, unlike the lesson dropdown: once "Custom text" is the
+  // selected option, re-picking it fires no change event, so there was no way
+  // to ask for a new passage without leaving custom mode and coming back.
+  els.custom?.addEventListener('click', () => openCustomModal());
 
   els.sentence.addEventListener('click', (e) => {
     if (e.target.classList.contains('word')) {
@@ -1039,6 +1046,19 @@ function attachEventListeners() {
     if (event.key === 'p' || event.key === 'P') {
       event.preventDefault();
       handlePlaybackClick(1);
+      return;
+    }
+
+    if (event.key === 's' || event.key === 'S') {
+      event.preventDefault();
+      handlePlaybackClick(SLOW_PLAYBACK_RATE);
+      return;
+    }
+
+    if (event.key === 'c' || event.key === 'C') {
+      if (els.custom && els.custom.classList.contains('hidden')) return;
+      event.preventDefault();
+      openCustomModal();
     }
   });
 
@@ -1065,6 +1085,10 @@ function handleLessonSelection(selection) {
 
 function openCustomModal() {
   if (!els.customModal) return;
+  // The dialog can now be opened mid-reading, so close out the attempt first:
+  // otherwise the mic keeps listening and scores the learner against whatever
+  // text replaces the one they were on. No-ops when nothing is recording.
+  stopRecording();
   els.customModal.classList.remove('hidden');
   els.customModal.setAttribute('aria-hidden', 'false');
   updateFetchPanel();
@@ -1080,11 +1104,19 @@ function closeCustomModal(resetSelection = false) {
   els.customModal.setAttribute('aria-hidden', 'true');
 
   if (resetSelection) {
+    // Cancelling must leave the selector showing whatever is actually being
+    // practised. Already in custom mode (the modal was reopened from the
+    // Custom text button to swap in a new passage) that IS the custom option;
+    // the fallback below is for the case where the dropdown opened this modal
+    // and no text was ever submitted.
+    if (state.mode === 'custom') {
+      els.lessonSelect.value = CUSTOM_LESSON_ID;
+      return;
+    }
+
     const fallbackLessonId = lastLessonId || getDefaultLessonId();
     els.lessonSelect.value = fallbackLessonId;
-    if (state.mode !== 'custom') {
-      state.lessonId = fallbackLessonId;
-    }
+    state.lessonId = fallbackLessonId;
   }
 }
 
@@ -4324,6 +4356,8 @@ async function enterAssignmentMode(code, data) {
   );
 
   if (els.settingsBar) els.settingsBar.classList.add('hidden');
+  // The text is the teacher's; swapping in your own would defeat the point.
+  if (els.custom) els.custom.classList.add('hidden');
   if (els.assignmentBar) els.assignmentBar.classList.remove('hidden');
   if (els.assignmentTitle) {
     els.assignmentTitle.textContent = meta.title || 'Reading practice';

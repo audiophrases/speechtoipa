@@ -84,12 +84,21 @@
 
   <main id="app" class="card" aria-live="polite">
     <div class="sentence" id="sentence"></div>
+    <!-- data-hotkey renders as a hover/focus tooltip (see styles.css), so the
+         keyboard shortcuts stay discoverable without crowding the labels. -->
     <div class="controls">
-      <button id="play-btn">▶ Play</button>
-      <button id="slow-btn">🐢 Slow</button>
-      <button id="record-btn">🎙️ Record</button>
-      <button id="stop-btn" class="secondary">⏹ Stop</button>
-      <button id="next-btn" class="secondary">Next sentence ➡</button>
+      <button id="play-btn" data-hotkey="Play — press P (Space plays and pauses)"
+              aria-keyshortcuts="P">▶ Play</button>
+      <button id="slow-btn" data-hotkey="Play slowly — press S" aria-keyshortcuts="S">🐢 Slow</button>
+      <button id="record-btn" data-hotkey="Start recording — press Enter"
+              aria-keyshortcuts="Enter">🎙️ Record</button>
+      <button id="stop-btn" class="secondary" data-hotkey="Stop recording — press Enter"
+              aria-keyshortcuts="Enter">⏹ Stop</button>
+      <button id="next-btn" class="secondary"
+              data-hotkey="Next sentence — press → (← goes back)"
+              aria-keyshortcuts="ArrowRight">Next sentence ➡</button>
+      <button id="custom-btn" class="secondary" data-hotkey="New custom text — press C"
+              aria-keyshortcuts="C">✏️ Custom text</button>
     </div>
     <div id="playback-warnings" class="status status-inline" role="status" aria-live="polite"></div>
     <div id="status" class="status"></div>

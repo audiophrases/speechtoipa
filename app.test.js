@@ -12,7 +12,19 @@ const {
   findMatchesForTargetTokens,
   isLikelyProperNoun,
   spokenNumberRunMatches,
+  joinRecognitionResults,
 } = require('./app.js');
+
+// Mimics a SpeechRecognitionResultList: an array-like of results, each an
+// array-like of alternatives.
+function recognitionResults(chunks) {
+  return chunks.map(function toResult(chunk) {
+    const text = typeof chunk === 'string' ? chunk : chunk.transcript;
+    const result = [{ transcript: text }];
+    result.isFinal = typeof chunk === 'string' ? false : Boolean(chunk.isFinal);
+    return result;
+  });
+}
 
 test('drops repeated sequences once expected counts are met', () => {
   const targetTokens = tokenizeText('hi my name is marc', 'en');
@@ -678,4 +690,34 @@ test('ranks natural voices above local standard voices for a language', () => {
   );
   // Off-language voices always rank last.
   assert.strictEqual(ranked[ranked.length - 1].name, 'Google français');
+});
+
+test('keeps every in-flight recognition result, not just the last one', () => {
+  // Chrome can hold more than one non-final result at a time. Keeping only the
+  // most recent one dropped whatever the learner said in the earlier ones.
+  const results = recognitionResults([
+    { transcript: 'la diferència és', isFinal: true },
+    'que no té',
+    'un parlament propi',
+  ]);
+
+  assert.strictEqual(
+    joinRecognitionResults(results),
+    'la diferència és que no té un parlament propi'
+  );
+});
+
+test('an empty in-flight result does not resurrect an earlier hypothesis', () => {
+  // The bug this guards: an empty transcript on the newest result used to make
+  // the whole transcript fall back to the previous result, so consecutive
+  // events flip-flopped between two competing hypotheses.
+  const results = recognitionResults(['rápido', { transcript: '' }, 'instafray']);
+
+  assert.strictEqual(joinRecognitionResults(results), 'rápido instafray');
+});
+
+test('joining recognition results tolerates an empty or missing list', () => {
+  assert.strictEqual(joinRecognitionResults([]), '');
+  assert.strictEqual(joinRecognitionResults(null), '');
+  assert.strictEqual(joinRecognitionResults(recognitionResults([{ transcript: '  ' }])), '');
 });

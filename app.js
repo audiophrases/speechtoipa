@@ -159,6 +159,12 @@ let currentTooltipTarget = null;
 let hasWarnedAboutArabicVoice = false;
 let lastLessonId = '';
 let recognitionRestartTimer = null;
+// Chrome ends a recognition session on every pause in speech and we immediately
+// start a new one. `sessionTranscript` is what the CURRENT session has heard;
+// `carriedTranscript` is everything earlier sessions of the same reading heard,
+// so a pause mid-sentence no longer wipes the learner's progress.
+let sessionTranscript = '';
+let carriedTranscript = '';
 let nextSentenceTimer = null;
 let sentenceNavToken = 0;
 let lastCoachAt = 0;
@@ -2326,48 +2332,62 @@ function toggleRecording() {
   startRecording();
 }
 
+// `event.results` is cumulative for the current recognition session, so the
+// session's transcript is REBUILT from it on every event rather than appended
+// to. Appending is what produced duplicate loops like "سلامسلامسلام...".
+//
+// Every result is kept, in order. Chrome can hold more than one in-flight
+// interim at a time (one per speech segment) and can emit an empty transcript
+// for the newest one. Keeping only the last non-empty interim, as this used to,
+// threw away whatever the learner said in the others and made the transcript
+// flip-flop between two competing hypotheses on consecutive events.
+function joinRecognitionResults(results) {
+  let text = '';
+  for (let i = 0; i < (results ? results.length : 0); i++) {
+    const res = results[i];
+    const chunk = (res && res[0] && res[0].transcript ? res[0].transcript : '').trim();
+    if (!chunk) continue;
+    text = text ? text + ' ' + chunk : chunk;
+  }
+  return text;
+}
+
 function initRecognition() {
   if (!state.supportsRecognition) return;
   if (state.recognition) {
     state.recognition.abort();
   }
 
-  state.recognition = new SpeechRecognition();
-  state.recognition.lang = getRecognitionLangCode(state.targetLang);
-  state.recognition.continuous = true;
-  state.recognition.interimResults = true;
-  state.recognition.maxAlternatives = 1;
+  // The aborted recognizer above still delivers its onend/onerror
+  // asynchronously, after this one is installed. Every handler below therefore
+  // checks that it is still the live recognizer before touching shared state —
+  // otherwise a superseded session could restart the mic or push its leftover
+  // transcript onto the new sentence.
+  const recognition = new SpeechRecognition();
+  const isCurrent = () => state.recognition === recognition;
 
-  // Keep a stable transcript: accumulate finalized chunks + latest interim chunk.
-  // This prevents duplicate loops like "سلامسلامسلام..." from overlapping interim results.
-  let finalTranscript = '';
+  state.recognition = recognition;
+  recognition.lang = getRecognitionLangCode(state.targetLang);
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
 
-  state.recognition.onresult = (event) => {
-    let interim = '';
+  recognition.onresult = (event) => {
+    if (!isCurrent()) return;
+    sessionTranscript = joinRecognitionResults(event.results);
 
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const res = event.results[i];
-      const text = (res && res[0] && res[0].transcript ? res[0].transcript : '').trim();
-      if (!text) continue;
-
-      if (res.isFinal) {
-        finalTranscript = (finalTranscript + ' ' + text).trim();
-      } else {
-        // Keep only the most recent interim (avoids repetition loops)
-        interim = text;
-      }
-    }
-
-    const transcript = (finalTranscript + (interim ? ' ' + interim : '')).trim();
+    const transcript = (carriedTranscript + ' ' + sessionTranscript).trim();
     const lastResult = event.results[event.results.length - 1];
     const isFinalResult = Boolean(lastResult && lastResult.isFinal);
 
     updateLiveFeedback(transcript, { isFinalResult });
   };
 
-  state.recognition.onstart = () => {
-    // Reset per-recording session so we don't carry a previous sentence into the next attempt.
-    finalTranscript = '';
+  recognition.onstart = () => {
+    if (!isCurrent()) return;
+    // A fresh session starts with an empty `event.results`. Anything the
+    // previous session heard already moved into `carriedTranscript` in onend.
+    sessionTranscript = '';
 
     state.recording = true;
     state.micPausedForTts = false;
@@ -2376,8 +2396,10 @@ function initRecognition() {
     updateWordSpanClasses();
   };
 
-  state.recognition.onerror = (event) => {
+  recognition.onerror = (event) => {
     console.error('Recognition error', event.error);
+    if (!isCurrent()) return;
+    debugLog({ event: 'recognition-error', error: event.error, sessionTranscript, carriedTranscript });
     state.recording = false;
     updateRecordState();
 
@@ -2395,7 +2417,18 @@ function initRecognition() {
     setStatus(`Recognition error: ${event.error}`);
   };
 
-  state.recognition.onend = () => {
+  recognition.onend = () => {
+    if (!isCurrent()) return;
+    debugLog({ event: 'recognition-end', sessionTranscript, carriedTranscript });
+
+    // Chrome ends the session at every pause in speech. What it heard is the
+    // learner's progress — including an interim it never got to finalize — so
+    // carry it forward instead of dropping it when the next session starts.
+    if (sessionTranscript) {
+      carriedTranscript = (carriedTranscript + ' ' + sessionTranscript).trim();
+      sessionTranscript = '';
+    }
+
     state.recording = false;
     updateRecordState();
     updateWordSpanClasses();
@@ -3690,6 +3723,10 @@ function applyOutOfOrderConfirmation(
 
 function resetSentenceState() {
   lastTranscript = '';
+  // A new sentence (or a new attempt at this one) must not inherit what the
+  // recognizer heard for the previous one.
+  sessionTranscript = '';
+  carriedTranscript = '';
   wordStatus = targetTokens.map(() => 'pending');
   outOfOrderCorrectSince.clear();
   updateWordSpanClasses();
@@ -4439,5 +4476,6 @@ if (typeof module !== 'undefined' && module.exports) {
     isLikelyProperNoun,
     spokenNumberRunMatches,
     isNumberWordToken,
+    joinRecognitionResults,
   };
 }

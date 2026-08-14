@@ -2121,8 +2121,15 @@ function speakWord(text, rate = 1) {
   });
 }
 
+// Praise is spoken and never shown, so an entry is spelled for the voice rather
+// than for the eye. "Well read!" has to be written "Well red!": with no sentence
+// around it to fix the tense, the browser's own voices and the Google fallback
+// both say "reed", praising the learner for something they have yet to do. (The
+// neural voice reads it correctly — but that is the one engine that can be
+// asleep, so it cannot be relied on to carry the phrase.) "Red" is unambiguous
+// in every engine, so it is what all three are given. Don't "correct" this.
 const FEEDBACK_PHRASES = {
-  en: { tryWord: 'Try saying', praise: ['Well done!', 'Great reading!', 'Nice job!', 'Well read!'] },
+  en: { tryWord: 'Try saying', praise: ['Well done!', 'Great reading!', 'Nice job!', 'Well red!'] },
   fr: { tryWord: 'Essaie de dire', praise: ['Bravo !', 'Très bien lu !', 'Super !'] },
   ca: { tryWord: 'Prova de dir', praise: ['Molt bé!', 'Ben llegit!', 'Fantàstic!'] },
   es: { tryWord: 'Intenta decir', praise: ['¡Muy bien!', '¡Bien leído!', '¡Genial!'] },

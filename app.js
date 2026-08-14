@@ -1122,9 +1122,12 @@ function closeCustomModal(resetSelection = false) {
 
 // --- Fetch a passage (auto-fill custom text from a plain-language encyclopedia) ---
 
-// The dictation endpoint lives only on the neural TTS server (server/), never on
-// the Google Translate fallback, so resolve its base the same way TTS does and
-// bail out when only the Google fallback is configured.
+// Passages come from the wikis directly (passages.js, loaded alongside this
+// file) — no server involved, which is what makes this work on GitHub Pages.
+// The /api/dictation endpoint below is only a fallback, and it lives only on
+// the neural TTS server (server/), never on the Google Translate fallback, so
+// resolve its base the same way TTS does and bail out when only the Google
+// fallback is configured.
 function getDictationBaseUrl() {
   const base = getTtsBaseUrl();
   if (!base || isGoogleTranslateTts(base)) return null;
@@ -1149,18 +1152,19 @@ function formatCitationDate(iso) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Refresh the panel each time the modal opens: gate on server availability and
-// name the current target language.
+// Refresh the panel each time the modal opens: name the current target
+// language, and gate only on there being some way to fetch at all — the
+// passage engine ships with the page, so that is normally just "yes".
 function updateFetchPanel() {
   setFetchStatus('');
   hideFetchCitation();
-  const hasServer = Boolean(getDictationBaseUrl());
+  const canFetch = Boolean(getPassageEngine() || getDictationBaseUrl());
   (els.fetchButtons || []).forEach((btn) => {
-    btn.disabled = !hasServer;
+    btn.disabled = !canFetch;
   });
   if (!els.fetchPanelSub) return;
-  if (!hasServer) {
-    els.fetchPanelSub.textContent = 'Fetching passages needs the neural voice server (run speechtoipa.bat).';
+  if (!canFetch) {
+    els.fetchPanelSub.textContent = 'Fetching passages is unavailable (passages.js did not load).';
     return;
   }
   const langLabel = (TARGET_LANGS.find((l) => l.code === state.targetLang) || {}).label || 'the target language';
@@ -1197,12 +1201,37 @@ function renderFetchCitation(data) {
   els.fetchCitation.classList.remove('hidden');
 }
 
-async function fetchPassage(length) {
-  const base = getDictationBaseUrl();
-  if (!base) {
-    setFetchStatus('Fetching passages needs the neural voice server. Run speechtoipa.bat, then try again.');
-    return;
+function getPassageEngine() {
+  return (typeof window !== 'undefined' && window.Passages) || null;
+}
+
+// The encyclopedias are MediaWiki sites, and MediaWiki answers cross-origin
+// reads directly (passages.js asks with `origin=*`), so the page fetches its
+// own passages — on GitHub Pages, from a file:// copy, anywhere. The server
+// endpoint is tried only when that fails outright, which in practice means a
+// network that blocks the wikis but can still reach the deployed server.
+async function requestPassage(lang, length) {
+  const engine = getPassageEngine();
+  if (engine) {
+    try {
+      return await engine.fetchPassage(lang, length);
+    } catch (err) {
+      if (!getDictationBaseUrl()) throw err;
+      console.warn('Direct passage fetch failed, trying the server:', err.message || err);
+    }
   }
+
+  const base = getDictationBaseUrl();
+  if (!base) throw new Error('Could not reach the source. Please check your connection and try again.');
+  const resp = await fetch(
+    `${base}/api/dictation?lang=${encodeURIComponent(lang)}&length=${encodeURIComponent(length)}`
+  );
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'Failed to fetch passage');
+  return data;
+}
+
+async function fetchPassage(length) {
   const lang = state.targetLang || 'en';
   (els.fetchButtons || []).forEach((btn) => {
     btn.disabled = true;
@@ -1210,11 +1239,10 @@ async function fetchPassage(length) {
   hideFetchCitation();
   setFetchStatus('Fetching a passage…');
   try {
-    const resp = await fetch(
-      `${base}/api/dictation?lang=${encodeURIComponent(lang)}&length=${encodeURIComponent(length)}`
-    );
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'Failed to fetch passage');
+    const data = await requestPassage(lang, length);
+    // Every source was reachable but nothing it offered was usable practice
+    // material — retrying draws fresh random articles, so it's worth a nudge.
+    if (!data) throw new Error('Could not find a suitable passage. Please try again.');
     if (els.customInput) {
       els.customInput.value = data.text;
       els.customInput.focus();

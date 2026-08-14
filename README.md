@@ -11,8 +11,9 @@ Three pieces, in three places, for one reason each:
 | Piece | Where | Why there |
 | --- | --- | --- |
 | The app itself | **GitHub Pages** | A static host has no cold start, so an assignment link opens instantly. |
-| `/tts`, `/api/dictation` | **Render** (`server/`) | The Edge voices need a Node proxy. It may sleep; only free practice waits for it. |
+| `/tts` | **Render** (`server/`) | The Edge voices need a Node proxy. It may sleep; only free practice waits for it. |
 | Assignments, logins, results | **Cloudflare Worker + R2** | Always on, so a class signing in at 8:55am waits for nothing. |
+| "Fetch a passage" | **The browser** ([passages.js](passages.js)) | The encyclopedias answer cross-origin reads themselves, so nothing needs to sit in front of them. |
 
 The Worker is the same one Dictation Time uses — one roster, one teacher
 password, one place a class's work is stored. This app registers its
@@ -138,6 +139,26 @@ loaded by both the app and the teacher page — the same lessons offered for
 practice are the ones offered as assignments. Dictation Time reads the same
 sheet, so editing a sentence there changes it in three places with nothing to
 rebuild.
+
+## Fetch a passage
+
+The custom-text dialog can fill itself with a real, dated passage in the target
+language, drawn from a plain-language encyclopedia — Vikidia (written for
+children) or Simple English Wikipedia first, ordinary Wikipedia as the fallback,
+and the Moroccan Arabic Wikipedia for Darija. Articles that read like stubs
+(lists, disambiguation pages, anything dense with names or years) are skipped
+and another random one drawn, up to a 12-second budget.
+
+[passages.js](passages.js) does this in the browser, with no server involved:
+every source is a MediaWiki site, and MediaWiki answers anonymous cross-origin
+reads when the query carries `origin=*`. That is why the feature works on
+GitHub Pages, from `speechtoipa.bat` and from a `file://` copy alike. The same
+file also backs the server's `/api/dictation` (`server/dictation.js` is a thin
+wrapper around it), which the app now falls back to only if it cannot reach the
+wikis itself — a school filter, say — and the voice server is available.
+
+`node --test` runs [passages.test.js](passages.test.js), which covers the
+passage shaping and both request shapes without going near the network.
 
 ## Guided reading (Read Along-style)
 

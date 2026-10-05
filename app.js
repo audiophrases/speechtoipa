@@ -1632,7 +1632,10 @@ function renderCurrentSentence() {
     }
     targetTokenVariants = targetTokens.map((token, index) => ({
       text: token,
-      aliases: tokensForMatching[index]?.pronunciation_aliases || [],
+      aliases: [
+        ...(tokensForMatching[index]?.pronunciation_aliases || []),
+        ...spokenFormsOfAbbreviation(token, state.targetLang),
+      ],
       isProperNoun: Boolean(tokensForMatching[index]?.isProperNoun),
     }));
 
@@ -1706,7 +1709,7 @@ function renderCurrentSentence() {
     // match threshold instead of blocking the sentence on the default one.
     targetTokenVariants = targetTokens.map((token, index) => ({
       text: token,
-      aliases: [],
+      aliases: spokenFormsOfAbbreviation(token, state.targetLang),
       isProperNoun: isLikelyProperNoun(rawTokens[index], index),
     }));
 
@@ -2076,7 +2079,7 @@ function createPlaybackQueue() {
 
   return {
     enqueue(item) {
-      queue.push({ ...item, attempt: item.attempt || 0 });
+      queue.push({ ...item, text: textForSpeech(item.text, item.langCode), attempt: item.attempt || 0 });
       processQueue();
     },
     warmVoicesForLang,
@@ -2085,6 +2088,69 @@ function createPlaybackQueue() {
       return isWarming;
     },
   };
+}
+
+// Abbreviations a reader expands aloud, keyed by language and by the written
+// form as normalizeWord leaves it (lowercase, unaccented, no period), each
+// with the words a learner may say for it. A learner who reads "Sr." as
+// "senyor" read it right, so the spoken forms are accepted as aliases of
+// the written token — every one of them, where one abbreviation stands for
+// more than one word ("St." is street or saint). Only true abbreviations
+// belong here: never a form that is also a word of its own, like Catalan
+// "alt", or the word would be credited for something else.
+const SPOKEN_ABBREVIATIONS = {
+  ca: { etc: ['etcètera'], sr: ['senyor'], sra: ['senyora'], dr: ['doctor'], dra: ['doctora'] },
+  es: {
+    etc: ['etcétera'],
+    sr: ['señor'],
+    sra: ['señora'],
+    dr: ['doctor'],
+    dra: ['doctora'],
+    ud: ['usted'],
+    uds: ['ustedes'],
+  },
+  fr: { etc: ['et cetera'], mme: ['madame'], dr: ['docteur'] },
+  it: { ecc: ['eccetera'], sig: ['signor', 'signore'], dott: ['dottor', 'dottore'] },
+  en: {
+    etc: ['etcetera', 'et cetera'],
+    mr: ['mister'],
+    mrs: ['missus'],
+    dr: ['doctor', 'drive'],
+    st: ['street', 'saint'],
+  },
+};
+
+function baseLangCode(langCode) {
+  return String(langCode || '').toLowerCase().split('-')[0];
+}
+
+function spokenFormsOfAbbreviation(token, langCode) {
+  const table = SPOKEN_ABBREVIATIONS[baseLangCode(langCode)];
+  return (table && table[normalizeWord(token)]) || [];
+}
+
+// The last word of the text, its period, and any closing quotes or brackets.
+// The word must not follow a period, so a dotted abbreviation ("a.m.") is
+// left alone, and the closing class refuses a second period, so an ellipsis
+// is too. (No lookbehind for the first rule: Safari before 16.4 cannot parse
+// one, and the whole of app.js would fail to load there.)
+const FINAL_WORD_PERIOD_RE = /(^|[^.\p{L}\p{M}])([\p{L}\p{M}'’·-]+)\.(["'»”’)\]]*)\s*$/u;
+
+// What the voices are given to say. A voice reads a word followed by a period
+// as an abbreviation whenever it can: the Catalan neural voice says "altitud"
+// for a sentence-final "alt." and "femení" for "fem.", so "És molt alt."
+// teaches the learner a wrong word. Dropping the period stops that. It costs
+// nothing, because the end of the text ends the sentence anyway: for a word
+// with no abbreviation reading, every voice tested (Edge neural, the Google
+// fallback, the Windows voices) speaks the sentence for the same length, to
+// within 10 ms, with or without it.
+// True abbreviations keep their period so the voice still expands them —
+// without it the Catalan voice says "etc" instead of "etcètera".
+function textForSpeech(text, langCode) {
+  const s = String(text || '');
+  const m = s.match(FINAL_WORD_PERIOD_RE);
+  if (!m || spokenFormsOfAbbreviation(m[2], langCode).length) return s;
+  return s.slice(0, m.index) + m[1] + m[2] + m[3];
 }
 
 async function speakSentence(text, langCode, rate = 1.0, { onDone } = {}) {
@@ -2304,7 +2370,7 @@ function speakCurrentImmediate(rate = 1, onDone) {
     if (synth.paused) synth.resume();
   } catch (_) {}
 
-  const utterance = new SpeechSynthesisUtterance(text);
+  const utterance = new SpeechSynthesisUtterance(textForSpeech(text, langCode));
   utterance.lang = langCode;
   utterance.rate = rate;
   const voice = getBestVoiceSync(langCode);
@@ -4546,5 +4612,7 @@ if (typeof module !== 'undefined' && module.exports) {
     spokenNumberRunMatches,
     isNumberWordToken,
     joinRecognitionResults,
+    textForSpeech,
+    spokenFormsOfAbbreviation,
   };
 }

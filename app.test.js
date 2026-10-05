@@ -13,6 +13,8 @@ const {
   isLikelyProperNoun,
   spokenNumberRunMatches,
   joinRecognitionResults,
+  textForSpeech,
+  spokenFormsOfAbbreviation,
 } = require('./app.js');
 
 // Mimics a SpeechRecognitionResultList: an array-like of results, each an
@@ -720,4 +722,54 @@ test('joining recognition results tolerates an empty or missing list', () => {
   assert.strictEqual(joinRecognitionResults([]), '');
   assert.strictEqual(joinRecognitionResults(null), '');
   assert.strictEqual(joinRecognitionResults(recognitionResults([{ transcript: '  ' }])), '');
+});
+
+test('a sentence-final word is spoken without its period, so it is not read as an abbreviation', () => {
+  // The Catalan neural voice says "altitud" for "alt." and "femení" for "fem.".
+  assert.strictEqual(textForSpeech('El campanar és molt alt.', 'ca-ES'), 'El campanar és molt alt');
+  assert.strictEqual(textForSpeech('Ho fem.', 'ca-ES'), 'Ho fem');
+  assert.strictEqual(textForSpeech('Diu: «Ho fem.»', 'ca-ES'), 'Diu: «Ho fem»');
+  assert.strictEqual(textForSpeech('Ella diu que és l·l.', 'ca-ES'), 'Ella diu que és l·l');
+});
+
+test('a true abbreviation keeps its period so the voice still expands it', () => {
+  assert.strictEqual(textForSpeech('Hi havia pomes, peres, etc.', 'ca-ES'), 'Hi havia pomes, peres, etc.');
+  assert.strictEqual(textForSpeech('Turn left on Main St.', 'en-US'), 'Turn left on Main St.');
+});
+
+test('only a plain final word loses its period', () => {
+  const untouched = ['Són les nou a.m.', 'I waited...', 'És alt?', 'Que alt!', 'Van néixer el 1996.', 'Pass the salt.  x'];
+  untouched.forEach((text) => assert.strictEqual(textForSpeech(text, 'ca-ES'), text));
+  // Mid-text periods separate sentences; only the last one is touched.
+  assert.strictEqual(textForSpeech('És alt. Molt alt.', 'ca-ES'), 'És alt. Molt alt');
+});
+
+test('an abbreviation is matched by the words a reader says for it', () => {
+  const withAliases = (sentence, lang) =>
+    tokenizeText(sentence, lang).map((text) => ({ text, aliases: spokenFormsOfAbbreviation(text, lang) }));
+
+  const ca = findMatchesForTargetTokens(withAliases('Ve el Sr. Puig', 'ca'), tokenizeText('ve el senyor puig', 'ca'), {
+    langCode: 'ca',
+  });
+  assert.ok(ca.every(Boolean));
+  // Without the alias the spoken-out form is rejected — which is what it fixes.
+  assert.strictEqual(findMatchesForTargetTokens(['sr'], ['senyor'], { langCode: 'ca' })[0], null);
+
+  // Either reading of an ambiguous abbreviation is accepted.
+  ['street', 'saint'].forEach((said) => {
+    const matches = findMatchesForTargetTokens(withAliases('St.', 'en'), [said], { langCode: 'en' });
+    assert.notStrictEqual(matches[0], null, said);
+  });
+
+  // A two-word spoken form is found by the matcher's joined-window search.
+  const fr = findMatchesForTargetTokens(withAliases('etc.', 'fr'), ['et', 'cetera'], { langCode: 'fr' });
+  assert.notStrictEqual(fr[0], null);
+});
+
+test('a word that is also an abbreviation reading gets no alias', () => {
+  // "alt" is the adjective; the voice no longer says "altitud", so nothing
+  // should credit "altitud" for it.
+  assert.deepStrictEqual(spokenFormsOfAbbreviation('alt', 'ca'), []);
+  assert.deepStrictEqual(spokenFormsOfAbbreviation('St.', 'en'), ['street', 'saint']);
+  assert.deepStrictEqual(spokenFormsOfAbbreviation('etc', 'ma'), []);
 });

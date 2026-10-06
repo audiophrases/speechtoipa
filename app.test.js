@@ -15,6 +15,7 @@ const {
   joinRecognitionResults,
   textForSpeech,
   spokenFormsOfAbbreviation,
+  abbreviationAliases,
 } = require('./app.js');
 
 // Mimics a SpeechRecognitionResultList: an array-like of results, each an
@@ -789,10 +790,19 @@ test('an abbreviation is matched by the words a reader says for it', () => {
   assert.notStrictEqual(fr[0], null);
 });
 
-test('a word that is also an abbreviation reading gets no alias', () => {
-  // "alt" is the adjective; the voice no longer says "altitud", so nothing
-  // should credit "altitud" for it.
+test('a word that is also an abbreviation also accepts the reading the voice once gave it', () => {
+  // The voice now says "alt", but a learner who heard "altitud" is not marked wrong.
+  assert.deepStrictEqual(abbreviationAliases('alt', 'ca'), ['altitud']);
+  const ex = findMatchesForTargetTokens([{ text: 'ex', aliases: abbreviationAliases('ex', 'ca') }], ['exemple'], {
+    langCode: 'ca',
+  });
+  assert.notStrictEqual(ex[0], null);
+  // Without the alias "exemple" is rejected — the one the prefix rule misses.
+  assert.strictEqual(findMatchesForTargetTokens(['ex'], ['exemple'], { langCode: 'ca' })[0], null);
+
+  // Listing it does not bring the period back: the voice still says "alt".
+  assert.strictEqual(textForSpeech('El campanar és molt alt.', 'ca-ES'), 'El campanar és molt alt');
   assert.deepStrictEqual(spokenFormsOfAbbreviation('alt', 'ca'), []);
-  assert.deepStrictEqual(spokenFormsOfAbbreviation('St.', 'en'), ['street', 'saint']);
-  assert.deepStrictEqual(spokenFormsOfAbbreviation('etc', 'ma'), []);
+  assert.deepStrictEqual(abbreviationAliases('St.', 'en'), ['street', 'saint']);
+  assert.deepStrictEqual(abbreviationAliases('alt', 'es'), []);
 });

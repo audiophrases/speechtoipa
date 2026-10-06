@@ -1634,7 +1634,7 @@ function renderCurrentSentence() {
       text: token,
       aliases: [
         ...(tokensForMatching[index]?.pronunciation_aliases || []),
-        ...spokenFormsOfAbbreviation(token, state.targetLang),
+        ...abbreviationAliases(token, state.targetLang),
       ],
       isProperNoun: Boolean(tokensForMatching[index]?.isProperNoun),
     }));
@@ -1709,7 +1709,7 @@ function renderCurrentSentence() {
     // match threshold instead of blocking the sentence on the default one.
     targetTokenVariants = targetTokens.map((token, index) => ({
       text: token,
-      aliases: spokenFormsOfAbbreviation(token, state.targetLang),
+      aliases: abbreviationAliases(token, state.targetLang),
       isProperNoun: isLikelyProperNoun(rawTokens[index], index),
     }));
 
@@ -2122,7 +2122,9 @@ function createPlaybackQueue() {
 // the written token — every one of them, where one abbreviation stands for
 // more than one word ("St." is street or saint). Only true abbreviations
 // belong here: never a form that is also a word of its own, like Catalan
-// "alt", or the word would be credited for something else.
+// "alt" — textForSpeech keeps the period of anything listed here, and that
+// period is what makes the voice say "altitud". Those go in
+// WORD_ABBREVIATION_READINGS below.
 const SPOKEN_ABBREVIATIONS = {
   ca: { etc: ['etcètera'], sr: ['senyor'], sra: ['senyora'], dr: ['doctor'], dra: ['doctora'] },
   es: {
@@ -2145,6 +2147,33 @@ const SPOKEN_ABBREVIATIONS = {
   },
 };
 
+// Words that are also abbreviations, with the reading the Catalan neural
+// voice gave each one when it was followed by a period (measured by spoken
+// length against the bare word and the expansion). textForSpeech now drops
+// that period, so the voice says the word; these readings are accepted as
+// well in case a learner heard the expansion and repeats it. Most of them
+// would already pass on the matcher's prefix rule, but "ex" for "exemple"
+// would not, and none of them should depend on it.
+const WORD_ABBREVIATION_READINGS = {
+  ca: {
+    alt: ['altitud'],
+    vol: ['volum'],
+    cap: ['capítol'],
+    art: ['article'],
+    set: ['setembre'],
+    fem: ['femení'],
+    part: ['participi'],
+    com: ['comarca'],
+    col: ['columna'],
+    sec: ['secció'],
+    pol: ['política'],
+    ex: ['exemple'],
+    mat: ['matemàtiques'],
+    par: ['paràgraf'],
+    pres: ['present'],
+  },
+};
+
 function baseLangCode(langCode) {
   return String(langCode || '').toLowerCase().split('-')[0];
 }
@@ -2152,6 +2181,15 @@ function baseLangCode(langCode) {
 function spokenFormsOfAbbreviation(token, langCode) {
   const table = SPOKEN_ABBREVIATIONS[baseLangCode(langCode)];
   return (table && table[normalizeWord(token)]) || [];
+}
+
+// Every reading a learner may give a written token beyond the word itself.
+function abbreviationAliases(token, langCode) {
+  const readings = WORD_ABBREVIATION_READINGS[baseLangCode(langCode)];
+  return [
+    ...spokenFormsOfAbbreviation(token, langCode),
+    ...((readings && readings[normalizeWord(token)]) || []),
+  ];
 }
 
 // The last word of the text, its period, and any closing quotes or brackets.
@@ -4639,5 +4677,6 @@ if (typeof module !== 'undefined' && module.exports) {
     joinRecognitionResults,
     textForSpeech,
     spokenFormsOfAbbreviation,
+    abbreviationAliases,
   };
 }

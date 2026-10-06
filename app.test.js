@@ -15,7 +15,8 @@ const {
   joinRecognitionResults,
   textForSpeech,
   spokenFormsOfAbbreviation,
-  abbreviationAliases,
+  readingAliases,
+  modelTextForWord,
 } = require('./app.js');
 
 // Mimics a SpeechRecognitionResultList: an array-like of results, each an
@@ -792,8 +793,8 @@ test('an abbreviation is matched by the words a reader says for it', () => {
 
 test('a word that is also an abbreviation also accepts the reading the voice once gave it', () => {
   // The voice now says "alt", but a learner who heard "altitud" is not marked wrong.
-  assert.deepStrictEqual(abbreviationAliases('alt', 'ca'), ['altitud']);
-  const ex = findMatchesForTargetTokens([{ text: 'ex', aliases: abbreviationAliases('ex', 'ca') }], ['exemple'], {
+  assert.deepStrictEqual(readingAliases('alt', 'ca'), ['altitud']);
+  const ex = findMatchesForTargetTokens([{ text: 'ex', aliases: readingAliases('ex', 'ca') }], ['exemple'], {
     langCode: 'ca',
   });
   assert.notStrictEqual(ex[0], null);
@@ -803,6 +804,47 @@ test('a word that is also an abbreviation also accepts the reading the voice onc
   // Listing it does not bring the period back: the voice still says "alt".
   assert.strictEqual(textForSpeech('El campanar és molt alt.', 'ca-ES'), 'El campanar és molt alt');
   assert.deepStrictEqual(spokenFormsOfAbbreviation('alt', 'ca'), []);
-  assert.deepStrictEqual(abbreviationAliases('St.', 'en'), ['street', 'saint']);
-  assert.deepStrictEqual(abbreviationAliases('alt', 'es'), []);
+  assert.deepStrictEqual(readingAliases('St.', 'en'), ['street', 'saint']);
+  assert.deepStrictEqual(readingAliases('alt', 'es'), []);
+});
+
+test('a function word accepts both its weak and its stressed form', () => {
+  const withAliases = (sentence) =>
+    tokenizeText(sentence, 'en').map((text) => ({ text, aliases: readingAliases(text, 'en') }));
+  const target = withAliases('I want to read a book and the paper');
+
+  // Read fluently: weak forms, as a recognizer may spell them.
+  const weak = findMatchesForTargetTokens(target, tokenizeText('i want ta read uh book n duh paper', 'en'), {
+    langCode: 'en',
+  });
+  assert.ok(weak.every(Boolean));
+
+  // Read word by word: stressed forms.
+  const strong = findMatchesForTargetTokens(target, tokenizeText('i want two read a book and thee paper', 'en'), {
+    langCode: 'en',
+  });
+  assert.ok(strong.every(Boolean));
+
+  // Without the aliases the weak "a" is rejected — what this fixes.
+  assert.strictEqual(findMatchesForTargetTokens(['a'], ['uh'], { langCode: 'en' })[0], null);
+});
+
+test('weak and stressed forms do not credit a different word', () => {
+  const at = findMatchesForTargetTokens([{ text: 'at', aliases: readingAliases('at', 'en') }], ['it'], {
+    langCode: 'en',
+  });
+  assert.strictEqual(at[0], null);
+  assert.deepStrictEqual(readingAliases('a', 'fr'), []);
+});
+
+test('a word with a weak form is modelled with its neighbour, so the voice keeps the weak form', () => {
+  const words = ['I', 'have', 'a', 'book', 'for', 'the', 'class', 'of', 'Ms.', 'Lee', 'to'];
+  assert.strictEqual(modelTextForWord(words, 2, 'en'), 'a book');
+  assert.strictEqual(modelTextForWord(words, 5, 'en'), 'the class');
+  assert.strictEqual(modelTextForWord(words, 10, 'en'), 'Lee to');
+  assert.strictEqual(modelTextForWord(['Read', 'a.'], 1, 'en'), 'Read a');
+  // Every other word is still said on its own.
+  assert.strictEqual(modelTextForWord(words, 3, 'en'), 'book');
+  assert.strictEqual(modelTextForWord(['un', 'livre'], 0, 'fr'), 'un');
+  assert.strictEqual(modelTextForWord(['a'], 0, 'en'), 'a');
 });

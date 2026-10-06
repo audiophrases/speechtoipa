@@ -963,7 +963,12 @@ function attachEventListeners() {
 
   els.sentence.addEventListener('click', (e) => {
     if (e.target.classList.contains('word')) {
-      speakWord(e.target.dataset.word);
+      const index = wordSpans.indexOf(e.target);
+      speakWord(
+        index === -1
+          ? e.target.dataset.word
+          : modelTextForWord(wordSpans.map((span) => span.dataset.word), index, state.targetLang)
+      );
       e.target.classList.toggle('active');
     }
   });
@@ -1634,7 +1639,7 @@ function renderCurrentSentence() {
       text: token,
       aliases: [
         ...(tokensForMatching[index]?.pronunciation_aliases || []),
-        ...abbreviationAliases(token, state.targetLang),
+        ...readingAliases(token, state.targetLang),
       ],
       isProperNoun: Boolean(tokensForMatching[index]?.isProperNoun),
     }));
@@ -1709,7 +1714,7 @@ function renderCurrentSentence() {
     // match threshold instead of blocking the sentence on the default one.
     targetTokenVariants = targetTokens.map((token, index) => ({
       text: token,
-      aliases: abbreviationAliases(token, state.targetLang),
+      aliases: readingAliases(token, state.targetLang),
       isProperNoun: isLikelyProperNoun(rawTokens[index], index),
     }));
 
@@ -2174,6 +2179,43 @@ const WORD_ABBREVIATION_READINGS = {
   },
 };
 
+// English function words that are said one way in running speech and
+// another on their own: "a" is /ə/ in "a book" but /eɪ/ alone, "the" is /ðə/
+// but /ðiː/. A learner reading word by word gives the stressed form, one
+// reading fluently gives the weak form, and both are right. Each word lists
+// the spellings a recognizer writes for either form, including true
+// homophones of the stressed form ("two" for /tuː/). A spelling that is a
+// different word the learner might really say instead ("it" for "at", "then"
+// for "than") stays out, or it would be credited for a misreading.
+const WEAK_AND_STRONG_FORMS = {
+  en: {
+    a: ['uh', 'ah', 'eh', 'ay'],
+    an: ['un', 'uhn'],
+    the: ['thuh', 'duh', 'da', 'thee'],
+    and: ['n', 'an', 'en', 'un'],
+    of: ['uv', 'ov'],
+    to: ['ta', 'tuh', 'too', 'two'],
+    for: ['fer', 'four'],
+    from: ['frum'],
+    are: ['r', 'ar'],
+    or: ['er', 'oar'],
+    you: ['ya', 'yuh'],
+    your: ['yer'],
+    her: ['er'],
+    them: ['em'],
+    can: ['kin', 'cun'],
+    was: ['wuz'],
+    some: ['sum'],
+    be: ['bee'],
+    been: ['bin', 'ben'],
+  },
+};
+
+function hasWeakAndStrongForms(token, langCode) {
+  const table = WEAK_AND_STRONG_FORMS[baseLangCode(langCode)];
+  return Boolean(table && table[normalizeWord(token)]);
+}
+
 function baseLangCode(langCode) {
   return String(langCode || '').toLowerCase().split('-')[0];
 }
@@ -2184,11 +2226,14 @@ function spokenFormsOfAbbreviation(token, langCode) {
 }
 
 // Every reading a learner may give a written token beyond the word itself.
-function abbreviationAliases(token, langCode) {
-  const readings = WORD_ABBREVIATION_READINGS[baseLangCode(langCode)];
+function readingAliases(token, langCode) {
+  const lang = baseLangCode(langCode);
+  const key = normalizeWord(token);
+  const lookup = (tables) => (tables[lang] && tables[lang][key]) || [];
   return [
     ...spokenFormsOfAbbreviation(token, langCode),
-    ...((readings && readings[normalizeWord(token)]) || []),
+    ...lookup(WORD_ABBREVIATION_READINGS),
+    ...lookup(WEAK_AND_STRONG_FORMS),
   ];
 }
 
@@ -2354,6 +2399,22 @@ function scheduleCoachAfterSilence(index) {
   }, COACH_SILENCE_MS);
 }
 
+// What the voice says to model one word of the sentence. A word with a weak
+// form is said together with its neighbour, because a voice given "a" alone
+// says /eɪ/ and "the" alone /ðiː/ — the stressed forms — and a learner who
+// was reading "a book" fluently with /ə/ would be told to change it. The
+// next word is preferred, since these words lean on what follows them; the
+// last word of a sentence takes the one before it.
+function modelTextForWord(words, index, langCode) {
+  const clean = (w) => String(w || '').trim().replace(/[.,!?;:…"«»“”()]+$/u, '');
+  const word = clean(words[index]);
+  if (!word || !hasWeakAndStrongForms(word, langCode)) return word;
+  const next = clean(words[index + 1]);
+  if (next) return `${word} ${next}`;
+  const prev = clean(words[index - 1]);
+  return prev ? `${prev} ${word}` : word;
+}
+
 // Say “Try saying …” in the base language, then model the word slowly in the
 // target voice.
 function maybeCoachWrongWord(index) {
@@ -2363,7 +2424,7 @@ function maybeCoachWrongWord(index) {
   const now = Date.now();
   if (now - lastCoachAt < COACH_COOLDOWN_MS) return;
 
-  const surface = (wordSpans[index]?.dataset?.word || '').trim();
+  const surface = modelTextForWord(wordSpans.map((span) => span.dataset.word), index, state.targetLang);
   if (!surface) return;
 
   const phrases = getFeedbackPhrases();
@@ -4677,6 +4738,7 @@ if (typeof module !== 'undefined' && module.exports) {
     joinRecognitionResults,
     textForSpeech,
     spokenFormsOfAbbreviation,
-    abbreviationAliases,
+    readingAliases,
+    modelTextForWord,
   };
 }

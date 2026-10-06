@@ -3735,6 +3735,33 @@ function findBestSpokenWindow(text, spokenTokens, from, langCode) {
   return best;
 }
 
+// The words whose weak form is little more than a schwa, the ones a
+// recognizer drops when they are said on their own.
+const DROPPABLE_WEAK_FORMS = { en: ['a', 'an', 'the', 'of', 'to', 'and', 'or'] };
+
+// What a recognizer writes for a hesitation, when it writes anything.
+const HESITATION_TOKENS = { en: ['uh', 'um', 'ah', 'eh', 'er', 'erm', 'hmm', 'mm'] };
+
+function isDroppableWeakForm(target, langCode) {
+  const droppable = DROPPABLE_WEAK_FORMS[baseLangCode(langCode)];
+  return Boolean(droppable && droppable.includes(normalizeWord(targetTokenText(target))));
+}
+
+function bridgeDroppedWeakForm(target, nextTarget, spokenTokens, from, langCode) {
+  if (!nextTarget || !isDroppableWeakForm(target, langCode)) return null;
+
+  const hesitations = HESITATION_TOKENS[baseLangCode(langCode)] || [];
+  let start = from;
+  while (start < spokenTokens.length && hesitations.includes(normalizeWord(spokenTokens[start]))) start += 1;
+  if (start >= spokenTokens.length) return null;
+
+  // The next word must be what was said right there, on its own: a word
+  // found further on means something else was said in this word's place.
+  const threshold = getTokenMatchThreshold(nextTarget, langCode);
+  const score = scoreTokenWithAliases(nextTarget, normalizeWord(spokenTokens[start]), langCode);
+  return score >= threshold ? { start, end: start, score, bridged: true } : null;
+}
+
 function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {}) {
   const matches = new Array(targetTokens.length).fill(null);
   const usedUntil = { value: 0 };
@@ -3781,6 +3808,23 @@ function findMatchesForTargetTokens(targetTokens, spokenTokens, { langCode } = {
         i += 1;
         continue;
       }
+    }
+
+    // A weak-form function word read slowly, word by word. Said with no
+    // context, its weak form (/ə/ for "a") sounds like a hesitation, and the
+    // recognizer drops it or writes "uh": in "I have a book" read fluently,
+    // its language model expects the article and writes it, but read word by
+    // word there is no context to expect it from. So only the stressed /eɪ/
+    // ever got through. Once the learner has moved on to the next word with
+    // nothing but a hesitation (or nothing) spoken in between, credit the
+    // word along with it, sharing its span as the merge fallback below does.
+    const bridged = bridgeDroppedWeakForm(target, targetTokens[i + 1], spokenTokens, usedUntil.value, targetLang);
+    if (bridged) {
+      matches[i] = bridged;
+      matches[i + 1] = bridged;
+      usedUntil.value = bridged.end + 1;
+      i += 2;
+      continue;
     }
 
     // Proper nouns (names/places) are frequently outside the recognizer's
@@ -4222,7 +4266,14 @@ function updateLiveFeedback(transcript, { isFinalResult = false } = {}) {
       }
     }
     if (firstNotCorrect !== -1) {
-      wordStatus[firstNotCorrect] = 'wrong';
+      // A pause ends a recognition segment, but a weak form the recognizer
+      // dropped ("a" said /ə/, word by word) is only confirmed by the word
+      // after it, which the learner has yet to say. Marking it wrong here
+      // turned a correct /ə/ red, and only a stressed /eɪ/ cleared it. So it
+      // stays pending; the coach can still model it, in context.
+      const awaitingNextWord =
+        firstNotCorrect < n - 1 && isDroppableWeakForm(targetTokens[firstNotCorrect], state.targetLang);
+      if (!awaitingNextWord) wordStatus[firstNotCorrect] = 'wrong';
       // Only coach when the learner actually attempted something.
       if (filteredTokens.length) {
         stumbledIndex = firstNotCorrect;

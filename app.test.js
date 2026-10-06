@@ -848,3 +848,34 @@ test('a word with a weak form is modelled with its neighbour, so the voice keeps
   assert.strictEqual(modelTextForWord(['un', 'livre'], 0, 'fr'), 'un');
   assert.strictEqual(modelTextForWord(['a'], 0, 'en'), 'a');
 });
+
+test('a weak "a" dropped by the recognizer in slow reading is credited once the next word is said', () => {
+  const target = tokenizeText('I have a book', 'en');
+  for (const said of ['i have book', 'i have uh book', 'i have um uh book']) {
+    const matches = findMatchesForTargetTokens(target, tokenizeText(said, 'en'), { langCode: 'en' });
+    assert.ok(matches.every(Boolean), said);
+  }
+  // Not before the learner gets to the next word.
+  assert.strictEqual(findMatchesForTargetTokens(target, tokenizeText('i have', 'en'), { langCode: 'en' })[2], null);
+  assert.strictEqual(findMatchesForTargetTokens(target, tokenizeText('i have uh', 'en'), { langCode: 'en' })[2], null);
+});
+
+test('a dropped weak form is not credited when another word was said in its place', () => {
+  const target = tokenizeText('go to the shop', 'en');
+  const matches = findMatchesForTargetTokens(target, tokenizeText('go to my shop', 'en'), { langCode: 'en' });
+  assert.strictEqual(matches[2], null);
+  // ...and is credited when it was simply dropped.
+  const dropped = findMatchesForTargetTokens(target, tokenizeText('go to shop', 'en'), { langCode: 'en' });
+  assert.ok(dropped.every(Boolean));
+  // Only the schwa-like words are bridged; a content word is never skipped.
+  const big = findMatchesForTargetTokens(tokenizeText('I have big books', 'en'), tokenizeText('i have books', 'en'), {
+    langCode: 'en',
+  });
+  assert.strictEqual(big[2], null);
+  // And only in English. (French "un" may still pass on the merge fallback,
+  // "unlivre" against "livre", which predates this; it is never bridged.)
+  const fr = findMatchesForTargetTokens(tokenizeText("j'ai un livre", 'fr'), tokenizeText("j'ai livre", 'fr'), {
+    langCode: 'fr',
+  });
+  assert.ok(!fr.some((m) => m && m.bridged));
+});

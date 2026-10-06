@@ -1780,7 +1780,26 @@ function goToNext() {
 // paragraphs (or one-sentence-per-line lists) both work.
 const SENTENCE_SPLIT_RE = /[^.!?؟…]+(?:[.!?؟…]+)?/g;
 
-function splitIntoSentences(text) {
+// Titles that stand before a name ("El Sr. Puig ve."), so their period never
+// ends a sentence. Kept apart from SPOKEN_ABBREVIATIONS because many of those
+// do end one: "etc." often closes a sentence, and so does "St." for street.
+const TITLE_ABBREVIATIONS = {
+  ca: ['sr', 'sra', 'dr', 'dra'],
+  es: ['sr', 'sra', 'dr', 'dra'],
+  fr: ['mme', 'dr'],
+  it: ['sig', 'dott'],
+  en: ['mr', 'mrs', 'dr'],
+};
+
+const LAST_WORD_PERIOD_RE = /(^|[^.\p{L}\p{M}])([\p{L}\p{M}]+)\.$/u;
+
+function endsWithTitle(text, langCode) {
+  const titles = TITLE_ABBREVIATIONS[baseLangCode(langCode)];
+  const m = titles && text.match(LAST_WORD_PERIOD_RE);
+  return Boolean(m) && titles.includes(normalizeWord(m[2]));
+}
+
+function splitIntoSentences(text, langCode) {
   const lines = String(text || '')
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -1791,10 +1810,16 @@ function splitIntoSentences(text) {
     const normalized = line.replace(/\s+/g, ' ').trim();
     if (!normalized) return;
     const pieces = normalized.match(SENTENCE_SPLIT_RE) || [normalized];
+    let pending = '';
     pieces.forEach((piece) => {
       const trimmed = piece.trim();
-      if (trimmed) sentences.push(trimmed);
+      if (!trimmed) return;
+      pending = pending ? `${pending} ${trimmed}` : trimmed;
+      if (endsWithTitle(pending, langCode)) return;
+      sentences.push(pending);
+      pending = '';
     });
+    if (pending) sentences.push(pending);
   });
 
   if (sentences.length) return sentences;
@@ -1813,7 +1838,7 @@ function enterCustomMode(text) {
     };
   }
 
-  const sentenceTexts = splitIntoSentences(text);
+  const sentenceTexts = splitIntoSentences(text, state.targetLang);
 
   state.customSentence = text;
   state.mode = 'custom';

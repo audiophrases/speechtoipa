@@ -208,6 +208,29 @@ test('splits a pasted paragraph into individual sentences', () => {
   ]);
 });
 
+test('a title before a name does not end the sentence', () => {
+  assert.deepStrictEqual(splitIntoSentences('El Sr. Puig ve. La Dra. Vila també.', 'ca'), [
+    'El Sr. Puig ve.',
+    'La Dra. Vila també.',
+  ]);
+  assert.deepStrictEqual(splitIntoSentences('Mr. and Mrs. Smith are here.', 'en'), ['Mr. and Mrs. Smith are here.']);
+});
+
+test('an abbreviation that can end a sentence still splits', () => {
+  assert.deepStrictEqual(splitIntoSentences('Hi havia pomes, peres, etc. Després vam marxar.', 'ca'), [
+    'Hi havia pomes, peres, etc.',
+    'Després vam marxar.',
+  ]);
+  assert.deepStrictEqual(splitIntoSentences('I live on Main St. It is quiet.', 'en'), [
+    'I live on Main St.',
+    'It is quiet.',
+  ]);
+  // A title at the very end of the text is still kept, not dropped.
+  assert.deepStrictEqual(splitIntoSentences('Bon dia, Sr.', 'ca'), ['Bon dia, Sr.']);
+  // Without a language, nothing changes.
+  assert.deepStrictEqual(splitIntoSentences('El Sr. Puig ve.'), ['El Sr.', 'Puig ve.']);
+});
+
 test('splits one-sentence-per-line custom text even without punctuation', () => {
   const text = 'Hello there\nHow are you\nGoodbye';
   assert.deepStrictEqual(splitIntoSentences(text), [
